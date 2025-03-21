@@ -1,0 +1,140 @@
+import { StyleSheet } from 'react-native';
+
+export const formStyles = StyleSheet.create({
+  container: {
+    marginTop: 16,
+    padding: 12,
+    backgroundColor: '#FFF',
+    borderRadius: 6,
+    elevation: 2,
+  },
+  progressBarContainer: {
+    height: 8,
+    backgroundColor: '#E0E0E0',
+    borderRadius: 4,
+    overflow: 'hidden',
+    marginBottom: 12,
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: '#2D6A4F',
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 12,
+    color: '#333',
+    textAlign: 'center',
+  },
+  label: {
+    marginTop: 8,
+    fontWeight: '600',
+    color: '#444',
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#CCC',
+    borderRadius: 4,
+    marginTop: 4,
+    padding: 8,
+  },
+  optionsContainer: {
+    backgroundColor: '#EEE',
+    borderWidth: 1,
+    borderColor: '#CCC',
+    borderRadius: 4,
+    marginTop: 4,
+    maxHeight: 150,
+  },
+  optionText: {
+    padding: 8,
+    color: '#333',
+    borderBottomWidth: 1,
+    borderBottomColor: '#CCC',
+  },
+  switchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  rowButtons: {
+    flexDirection: 'row',
+    marginTop: 4,
+    flexWrap: 'wrap',
+  },
+  optionButton: {
+    backgroundColor: '#EEE',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 4,
+    marginRight: 6,
+    marginBottom: 6,
+  },
+  optionButtonSelected: {
+    backgroundColor: '#74C69D',
+  },
+  optionButtonText: {
+    color: '#333',
+    fontWeight: '600',
+  },
+  confirmButton: {
+    marginTop: 12,
+    backgroundColor: '#2D6A4F',
+    padding: 10,
+    borderRadius: 6,
+    alignItems: 'center',
+  },
+  confirmButtonText: {
+    color: '#FFF',
+    fontWeight: '600',
+  },
+  navigationContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 12,
+  },
+  navButton: {
+    backgroundColor: '#2D6A4F',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
+  navButtonText: {
+    color: '#FFF',
+    fontWeight: '600',
+  },
+  errorText: {
+    color: 'red',
+    fontSize: 12,
+    marginTop: 4,
+  },
+  imageContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginVertical: 12,
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 6,
+    backgroundColor: '#f9f9f9',
+    padding: 8,
+  },
+  image: {
+    width: 130,
+    height: 100,
+    resizeMode: 'contain',
+    marginHorizontal: 8,
+  },
+  scrollContainer: {
+    flexGrow: 1,
+    padding: 12,
+    backgroundColor: '#FFF',
+    paddingBottom: 60,
+  },
+  instructionText: {
+    fontSize: 12,
+    color: '#777',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+});
