@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Alert } from 'react-native';
-import { useNavigation } from '@react-navigation/native'; // Si se quiere usar navegación, aunque aquí usaremos el callback
-import { formStyles as styles } from './formStyles';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+import { formStylesBase as styles, formStylesPorRol, rolFormMap } from './formStyles';
 import { MovementFormData } from './NewMovementForm';
 
 interface StepThreeProps {
@@ -11,80 +12,90 @@ interface StepThreeProps {
 }
 
 const StepThree: React.FC<StepThreeProps> = ({ formData, setFormData, onFinish }) => {
-  // Función para seleccionar servicio ("Lavado" o "Torno")
-  const handleServicePress = (selectedService: 'Lavado' | 'Torno') => {
-    setFormData({ ...formData, service: selectedService });
-  };
+  const [rolId, setRolId] = useState<number | null>(null);
 
-  // Al pulsar "Confirmar solicitud", se validan los campos requeridos
-  // y se muestra un alert de confirmación.
-  const handleConfirm = () => {
-    // Validación: el servicio es obligatorio.
-    if (!formData.service) {
-      Alert.alert('⚠️ Error', 'Debes seleccionar un servicio.');
-      return;
-    }
+  useEffect(() => {
+    const fetchUser = async () => {
+      const userStr = await AsyncStorage.getItem('user');
+      if (userStr) {
+        const parsed = JSON.parse(userStr);
+        setRolId(parsed.rolId);
+      }
+    };
+    fetchUser();
+  }, []);
 
-    Alert.alert(
-      '🔔 Confirmación',
-      '¿Estás seguro de que deseas confirmar la solicitud?',
-      [
-        { text: 'No', style: 'cancel' },
-        { 
-          text: 'Sí', 
-          onPress: () => {
-            Alert.alert(
-              '✅ Realizado', 
-              'El movimiento ha sido confirmado.',
-              [
-                { text: 'OK', onPress: () => onFinish() }
-              ],
-              { cancelable: false }
-            );
+  const rolKey = rolFormMap[rolId ?? -1];
+  const dynamicStyles = formStylesPorRol[rolKey] || formStylesPorRol.CLIENTE;
+
+  const handleConfirm = async () => {
+    try {
+      // Recupera el objeto 'user' de AsyncStorage y extrae las propiedades deseadas
+      const userStr = await AsyncStorage.getItem('user');
+      let userSegment = {};
+      if (userStr) {
+        const parsed = JSON.parse(userStr);
+        userSegment = {
+          id: parsed.id,
+          name: parsed.usuario, // O parsed.username, según cómo se guarde el nombre
+          rol: parsed.rol,
+          company: parsed.empresa?.nombre || ''
+        };
+      }
+      // Agrega los datos del usuario a formData
+      const finalData = { ...formData, ...userSegment };
+      const collectedInfo = JSON.stringify(finalData, null, 2);
+
+      console.log('Collected Info:', collectedInfo);
+
+      Alert.alert(
+        '🔔 Confirmación',
+        '¿Estás seguro de que deseas confirmar la solicitud?\n\n' + collectedInfo,
+        [
+          { text: 'No', style: 'cancel' },
+          {
+            text: 'Sí',
+            onPress: () => {
+              Alert.alert(
+                '✅ Realizado',
+                'El movimiento ha sido confirmado.\n\n' + collectedInfo,
+                [{ text: 'OK', onPress: () => onFinish() }],
+                { cancelable: false }
+              );
+            }
           }
-        },
-      ],
-      { cancelable: false }
-    );
+        ],
+        { cancelable: false }
+      );
+    } catch (error) {
+      console.log(error);
+      Alert.alert('Error', 'No se pudieron recuperar los datos.');
+    }
   };
 
   return (
-    <View>
-      {/* Sección de servicio */}
-      <Text style={styles.label}>Servicio (selecciona uno):</Text>
+    <View style={{ marginTop: 10 }}>
       <View style={styles.rowButtons}>
-        <TouchableOpacity
-          style={[
-            styles.optionButton,
-            formData.service === 'Lavado' && styles.optionButtonSelected,
-          ]}
-          onPress={() => handleServicePress('Lavado')}
-        >
-          <Text style={styles.optionButtonText}>Lavado</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[
-            styles.optionButton,
-            formData.service === 'Torno' && styles.optionButtonSelected,
-          ]}
-          onPress={() => handleServicePress('Torno')}
-        >
-          <Text style={styles.optionButtonText}>Torno</Text>
-        </TouchableOpacity>
+        {/* Otros elementos si se requieren */}
       </View>
 
-      {/* Instrucciones y/o comentarios (opcional) */}
       <Text style={styles.label}>Instrucciones y/o comentarios:</Text>
       <TextInput
-        style={[styles.input, { height: 80 }]}
+        style={[
+          styles.input,
+          dynamicStyles.input || {},
+          { height: 100, textAlignVertical: 'top', paddingTop: 10 }
+        ]}
         multiline
         placeholder="Escribe comentarios o instrucciones adicionales..."
         value={formData.comments}
         onChangeText={(text) => setFormData({ ...formData, comments: text })}
       />
 
-      <TouchableOpacity style={styles.confirmButton} onPress={handleConfirm}>
+      <TouchableOpacity
+        style={[styles.confirmButton, dynamicStyles.confirmButton]}
+        onPress={handleConfirm}
+      >
         <Text style={styles.confirmButtonText}>Confirmar solicitud</Text>
       </TouchableOpacity>
     </View>

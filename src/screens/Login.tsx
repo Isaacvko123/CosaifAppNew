@@ -1,61 +1,122 @@
+/**
+ * Login.tsx
+ *
+ * Pantalla de autenticación de usuario.
+ *
+ * Esta vista permite a los usuarios iniciar sesión mediante usuario y contraseña.
+ * Realiza una solicitud HTTP al backend, recibe un token JWT y lo almacena en AsyncStorage.
+ * Luego redirige al usuario a una pantalla específica según su rol.
+ *
+ * Funcionalidad:
+ * - Validación básica de campos.
+ * - Comunicación con backend vía `fetch`.
+ * - Manejo de errores de red y errores de autenticación.
+ * - Persistencia del token y usuario autenticado.
+ * - Redirección por rol.
+ * - Iconos con FontAwesome y gradiente visual con `expo-linear-gradient`.
+ *
+ * Navegación:
+ * - Utiliza React Navigation para navegar hacia:
+ *   - `Cliente` (rol = "CLIENTE")
+ *   - `Supervisor` (rol = "SUPERVISOR")
+ *   - `Home` (otros)
+ */
+
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, KeyboardAvoidingView, Platform } from 'react-native';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  Alert,
+} from 'react-native';
+
 import { LinearGradient } from 'expo-linear-gradient';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-
-interface User {
-  usuario: string;
-  contraseña: string;
-}
-
-const users: Record<string, User> = {
-  maquinista: { usuario: "maquinista01", contraseña: "1234" },
-  operador: { usuario: "operador01", contraseña: "5678" },
-  cliente: { usuario: "Cliente", contraseña: "1" },
-  supervisor: { usuario: "supervisor01", contraseña: "efgh" },
-};
-
 import { StackNavigationProp } from '@react-navigation/stack';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type RootStackParamList = {
   Cliente: undefined;
   Home: undefined;
+  Supervisor: undefined;
 };
 
 type NavigationProp = StackNavigationProp<RootStackParamList>;
 
 const Login = () => {
   const navigation = useNavigation<NavigationProp>();
+
   const [showPassword, setShowPassword] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [role, setRole] = useState('');
 
-  const handleLogin = () => {
-    const userEntry = Object.entries(users).find(([key, user]) => user.usuario === username && user.contraseña === password);
-    if (userEntry) {
-      setError('');
-      setRole(userEntry[0]);
-      alert(`Login exitoso! Rol: ${userEntry[0]}`);
-      if (userEntry[0] === 'cliente') {
-        navigation.navigate('Cliente');
-      } else {
-        navigation.navigate('Home');
+  /**
+   * Maneja el proceso de login:
+   * - Envía la solicitud POST al backend.
+   * - Almacena token y datos del usuario en AsyncStorage.
+   * - Redirige según el rol del usuario autenticado.
+   */
+  const handleLogin = async () => {
+    try {
+      const response = await fetch('http://192.168.100.13:3000/usuarios/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre: username, contrasena: password }),
+      });
+  
+      const data = await response.json();
+  
+      if (!response.ok) {
+        setError(data.error || 'Error en la autenticación');
+        return;
       }
-    } else {
-      setError('Usuario o contraseña incorrectos');
+  
+      const { token, user } = data;
+  
+      // Guardamos todo el usuario tal como viene del backend
+      await AsyncStorage.multiSet([
+        ['token', token],
+        ['rol', user.rol],
+        ['user', JSON.stringify(user)],
+      ]);
+  
+      // Mensaje de bienvenida con el nombre
+      Alert.alert('Bienvenido', `${user.nombre}`);
+  
+      switch (user.rol) {
+        case 'CLIENTE':
+          navigation.navigate('Cliente');
+          break;
+        case 'SUPERVISOR':
+          navigation.navigate('Supervisor');
+          break;
+        default:
+          navigation.navigate('Home');
+          break;
+      }
+    } catch (err) {
+      console.error('Error de red o solicitud:', err);
+      setError('Error de red, intente más tarde');
     }
   };
-
+  
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <LinearGradient colors={["#A3D9A5", "#74C69D"]} style={styles.background}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      <LinearGradient colors={['#A3D9A5', '#74C69D']} style={styles.background}>
         <View style={styles.loginContainer}>
           <Image source={require('../../assets/logo.png')} style={styles.logo} />
           <Text style={styles.title}>Bienvenido</Text>
-          
+
           <View style={styles.inputContainer}>
             <FontAwesome5 name="user" size={20} color="#888" style={styles.icon} />
             <TextInput
@@ -66,7 +127,7 @@ const Login = () => {
               onChangeText={setUsername}
             />
           </View>
-          
+
           <View style={styles.inputContainer}>
             <FontAwesome5 name="lock" size={20} color="#888" style={styles.icon} />
             <TextInput
@@ -78,12 +139,17 @@ const Login = () => {
               onChangeText={setPassword}
             />
             <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-              <FontAwesome5 name={showPassword ? "eye" : "eye-slash"} size={20} color="#888" style={styles.iconRight} />
+              <FontAwesome5
+                name={showPassword ? 'eye' : 'eye-slash'}
+                size={20}
+                color="#888"
+                style={styles.iconRight}
+              />
             </TouchableOpacity>
           </View>
-          
+
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
-          
+
           <TouchableOpacity style={styles.button} onPress={handleLogin}>
             <Text style={styles.buttonText}>Ingresar</Text>
           </TouchableOpacity>

@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { ScrollView, View, Text, TouchableOpacity } from 'react-native';
-import { formStyles as styles } from './formStyles';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+import { formStylesBase } from './formStyles';
+
 import StepOne from './StepOne';
 import StepTwo from './StepTwo';
 import StepThree from './StepThree';
 
-// Tipos de datos para el formulario
 export interface MovementFormData {
   locomotiveNumber: string;
   fromTrack: string;
@@ -16,7 +18,6 @@ export interface MovementFormData {
   pushPull: string;
   movementType: string;
   comments: string;
-  // Nuevo campo para servicio (opcional, pero requerido en StepThree)
   service?: 'Lavado' | 'Torno' | '';
 }
 
@@ -25,10 +26,8 @@ interface NewMovementFormProps {
 }
 
 const NewMovementForm: React.FC<NewMovementFormProps> = ({ onFinish }) => {
-  // Estado para manejar el paso actual (1, 2, 3)
   const [currentStep, setCurrentStep] = useState<number>(1);
 
-  // Estado para los datos del formulario
   const [formData, setFormData] = useState<MovementFormData>({
     locomotiveNumber: '',
     fromTrack: '',
@@ -42,39 +41,32 @@ const NewMovementForm: React.FC<NewMovementFormProps> = ({ onFinish }) => {
     service: '',
   });
 
-  // Estado para almacenar los errores de validación en el Paso 1
   const [errors, setErrors] = useState<{
     locomotiveNumber?: string;
     fromTrack?: string;
     toTrack?: string;
   }>({});
 
-  // Estados para mostrar/ocultar opciones de "De vía" y "Para vía"
   const [showFromOptions, setShowFromOptions] = useState(false);
   const [showToOptions, setShowToOptions] = useState(false);
 
-  // Vías predefinidas (ejemplo)
   const predefinedTracks = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
-  // Validación del Paso 1
   const validateStep1 = (): boolean => {
     let valid = true;
-    const newErrors: {
-      locomotiveNumber?: string;
-      fromTrack?: string;
-      toTrack?: string;
-    } = {};
+    const newErrors: typeof errors = {};
 
-    if (formData.locomotiveNumber.trim() === '') {
+    if (!formData.locomotiveNumber.trim()) {
       newErrors.locomotiveNumber = 'El número de locomotora es requerido.';
       valid = false;
     }
-    if (formData.fromTrack.toString().trim() === '') {
-      newErrors.fromTrack = 'Debes seleccionar una vía.';
+    if (!formData.fromTrack.trim()) {
+      newErrors.fromTrack = 'Debes seleccionar una vía de origen.';
       valid = false;
     }
-    if (formData.toTrack.toString().trim() === '') {
-      newErrors.toTrack = 'Debes seleccionar una vía.';
+    // Si se ha seleccionado un servicio, no se requiere la vía de destino.
+    if (!formData.service && !formData.toTrack.trim()) {
+      newErrors.toTrack = 'Debes seleccionar una vía de destino.';
       valid = false;
     }
 
@@ -82,26 +74,17 @@ const NewMovementForm: React.FC<NewMovementFormProps> = ({ onFinish }) => {
     return valid;
   };
 
-  // Funciones para avanzar o retroceder entre pasos
   const nextStep = () => {
-    if (currentStep === 1) {
-      if (!validateStep1()) return;
-    }
-    if (currentStep < 3) {
-      setCurrentStep(currentStep + 1);
-    }
+    if (currentStep === 1 && !validateStep1()) return;
+    if (currentStep < 3) setCurrentStep(currentStep + 1);
   };
 
   const prevStep = () => {
-    if (currentStep > 1) {
-      setCurrentStep(currentStep - 1);
-    }
+    if (currentStep > 1) setCurrentStep(currentStep - 1);
   };
 
-  // Barra de progreso simple basada en el paso actual
   const progressPercentage = (currentStep / 3) * 100;
 
-  // Renderizado condicional de cada paso
   const renderStepContent = () => {
     switch (currentStep) {
       case 1:
@@ -118,15 +101,9 @@ const NewMovementForm: React.FC<NewMovementFormProps> = ({ onFinish }) => {
           />
         );
       case 2:
-        return (
-          <StepTwo
-            formData={formData}
-            setFormData={setFormData}
-          />
-        );
+        return <StepTwo formData={formData} setFormData={setFormData} />;
       case 3:
         return (
-          // Se pasa el callback onFinish a StepThree
           <StepThree
             formData={formData}
             setFormData={setFormData}
@@ -139,26 +116,41 @@ const NewMovementForm: React.FC<NewMovementFormProps> = ({ onFinish }) => {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.scrollContainer}>
+    <ScrollView contentContainerStyle={formStylesBase.scrollContainer}>
       {/* Barra de progreso */}
-      <View style={styles.progressBarContainer}>
-        <View style={[styles.progressBarFill, { width: `${progressPercentage}%` }]} />
+      <View style={formStylesBase.progressBarContainer}>
+        <View
+          style={[
+            formStylesBase.progressBarFill,
+            { width: `${progressPercentage}%` },
+          ]}
+        />
       </View>
 
-      <Text style={styles.title}>Nuevo movimiento (Paso {currentStep} de 3)</Text>
+      {/* Título */}
+      <Text style={formStylesBase.title}>
+        Nuevo Movimiento (Paso {currentStep} de 3)
+      </Text>
 
+      {/* Contenido del paso */}
       {renderStepContent()}
 
-      {/* Botones para navegar entre pasos */}
-      <View style={styles.navigationContainer}>
+      {/* Navegación */}
+      <View style={formStylesBase.navigationContainer}>
         {currentStep > 1 && (
-          <TouchableOpacity style={styles.navButton} onPress={prevStep}>
-            <Text style={styles.navButtonText}>Anterior</Text>
+          <TouchableOpacity
+            style={formStylesBase.navButton}
+            onPress={prevStep}
+          >
+            <Text style={formStylesBase.confirmButtonText}>Anterior</Text>
           </TouchableOpacity>
         )}
         {currentStep < 3 && (
-          <TouchableOpacity style={styles.navButton} onPress={nextStep}>
-            <Text style={styles.navButtonText}>Siguiente</Text>
+          <TouchableOpacity
+            style={formStylesBase.navButton}
+            onPress={nextStep}
+          >
+            <Text style={formStylesBase.confirmButtonText}>Siguiente</Text>
           </TouchableOpacity>
         )}
       </View>

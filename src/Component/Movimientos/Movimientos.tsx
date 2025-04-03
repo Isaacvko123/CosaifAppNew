@@ -6,55 +6,69 @@ import Tabs from './Tabs';
 import NewMovementForm from './Formulario/NewMovementForm';
 
 const Movimientos: React.FC = () => {
-  // Manejo de pestaña activa
+  // Estado: pestaña activa ('Actuales' o 'Pasados')
   const [activeTab, setActiveTab] = useState<'Actuales' | 'Pasados'>('Actuales');
-  // Manejo de data
+  // Estado: datos a mostrar en la tabla
   const [data, setData] = useState<Movement[]>([]);
-  // Controlar la vista de "Nuevo Movimiento"
+  // Estado: mostrar formulario de nuevo movimiento
   const [showNewMovement, setShowNewMovement] = useState(false);
 
-  // Datos simulados para "Actuales"
+  /**
+   * Datos simulados para movimientos "Actuales"
+   */
   const dataActuales: Movement[] = [
     {
-      id: 'ACT001',
-      locomotiveNumber: '1001',
-      fromTrack: 'Vía 1',
-      toTrack: 'Vía 3',
-      requestDateTime: '10-05-2025 08:00:00',
-      movementTime: '0:10:00',
-      values: 'N/A',
-      incidentRecord: 'Sin incidentes',
-      Imprevisto: false,
-      status: 'En proceso',
+      id: 1,
+      locomotora: 123,
+      viaOrigen: 5,
+      viaDestino: 7,
+      tipoAccion: 'EMPUJAR',
+      clienteId: 10,
+      supervisorId: 12,
+      coordinadorId: 15,
+      operadorId: 18,
+      maquinistaId: null,
+      empresaId: 3,
+      fechaSolicitud: '2025-04-01 10:00:00',
+      fechaInicio: '2025-04-01 10:15:00',
+      fechaFin: '2025-04-01 10:45:00',
+      estado: 'PENDIENTE',
+      instrucciones: 'Cargar carga X',
+      comentarioPostergacion: null,
+      nuevaFechaPostergacion: null,
     },
-    // ...agrega más
   ];
 
-  // Datos simulados para "Pasados"
+  /**
+   * Datos simulados para movimientos "Pasados"
+   */
   const dataPasados: Movement[] = [
     {
-      id: 'PAS0089',
-      locomotiveNumber: '2020',
-      fromTrack: 'Vía 2',
-      toTrack: 'Vía 4',
-      requestDateTime: '01-05-2025 10:20:00',
-      movementTime: '0:15:30',
-      values: 'N/A',
-      incidentRecord: 'Falla leve',
-      Imprevisto: true,
-      status: 'Realizado',
+      id: 2,
+      locomotora: 124,
+      viaOrigen: 3,
+      viaDestino: 8,
+      tipoAccion: 'JALAR',
+      clienteId: 11,
+      supervisorId: null,
+      coordinadorId: 16,
+      operadorId: 19,
+      maquinistaId: 20,
+      empresaId: 3,
+      fechaSolicitud: '2025-04-01 11:00:00',
+      fechaInicio: '2025-04-01 11:20:00',
+      fechaFin: '2025-04-01 11:55:00',
+      estado: 'CONCLUIDO',
+      instrucciones: 'Descargar carga Y',
+      comentarioPostergacion: 'Falla leve en el sistema',
+      nuevaFechaPostergacion: '2025-04-02 09:00:00',
     },
-    // ...agrega más
   ];
 
-  // Actualiza la data en función de la pestaña activa
+  // Actualiza los datos a mostrar según la pestaña activa
   useEffect(() => {
-    setShowNewMovement(false); // Al cambiar de pestaña, ocultamos el formulario
-    if (activeTab === 'Actuales') {
-      setData(dataActuales);
-    } else {
-      setData(dataPasados);
-    }
+    setShowNewMovement(false); // Oculta formulario al cambiar de pestaña
+    setData(activeTab === 'Actuales' ? dataActuales : dataPasados);
   }, [activeTab]);
 
   return (
@@ -62,30 +76,29 @@ const Movimientos: React.FC = () => {
       <Text style={styles.title}>
         {activeTab === 'Actuales' ? 'Movimientos Actuales' : 'Movimientos Pasados'}
       </Text>
-      
-      {/* Pestañas */}
+
+      {/* Navegación por pestañas */}
       <Tabs
         tabs={['Actuales', 'Pasados']}
         activeTab={activeTab}
         onTabPress={(tab) => setActiveTab(tab as 'Actuales' | 'Pasados')}
       />
 
-      {/* Muestra el botón "Nuevo" solo en la pestaña "Actuales" si no se está creando */}
+      {/* Vista condicional: formulario o tabla */}
+      {showNewMovement ? (
+        <NewMovementForm onFinish={() => setShowNewMovement(false)} />
+      ) : (
+        <MovimientosTable data={data} />
+      )}
+
+      {/* Botón para registrar nuevo movimiento, centrado y separado */}
       {activeTab === 'Actuales' && !showNewMovement && (
         <TouchableOpacity
           style={styles.newButton}
           onPress={() => setShowNewMovement(true)}
         >
-          <Text style={styles.newButtonText}>Nuevo</Text>
+          <Text style={styles.newButtonText}>Nuevo Movimiento</Text>
         </TouchableOpacity>
-      )}
-
-      {/* Si se presiona "Nuevo", se muestra el formulario. De lo contrario, la tabla */}
-      {showNewMovement ? (
-        // Se pasa el callback onFinish para que NewMovementForm notifique que finalizó
-        <NewMovementForm onFinish={() => setShowNewMovement(false)} />
-      ) : (
-        <MovimientosTable data={data} />
       )}
     </View>
   );
@@ -96,26 +109,31 @@ export default Movimientos;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 16,
-    backgroundColor: '#F9F9F9',
+    padding: 20,
+    backgroundColor: '#F4F6F8',
   },
   title: {
-    fontSize: 24,
+    fontSize: 26,
     fontWeight: '700',
-    marginBottom: 16,
-    color: '#333',
+    color: '#2D6A4F',
     textAlign: 'center',
+    marginBottom: 20,
   },
   newButton: {
-    alignSelf: 'flex-end',
+    alignSelf: 'center',
     backgroundColor: '#2D6A4F',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 6,
-    marginBottom: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginTop: 20,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 3,
   },
   newButtonText: {
     color: '#FFF',
+    fontSize: 16,
     fontWeight: '600',
   },
 });

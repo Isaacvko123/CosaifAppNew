@@ -3,7 +3,12 @@ import { View, Text, TouchableOpacity, StyleSheet, GestureResponderEvent } from 
 import { FontAwesome5 } from '@expo/vector-icons';
 import Menu from '../../../Component/Menu/Menu';
 
-const Cliente: React.FC = () => {
+interface MenuProps {
+  visible: boolean;
+  onClose: (event?: GestureResponderEvent) => void;
+  onNavigate: (screenName: string) => void;
+}
+const Supervisor: React.FC = () => {
   const [menuVisible, setMenuVisible] = useState<boolean>(false);
 
   const toggleMenu = (event?: GestureResponderEvent) => {
@@ -21,11 +26,10 @@ const Cliente: React.FC = () => {
       <Menu 
         visible={menuVisible} 
         onClose={toggleMenu} 
-        onNavigate={(screenName: string) => { /* handle navigation */ }} 
       />
 
       {/* Renderiza el texto solo si el menú no está visible */}
-      {!menuVisible && <Text style={styles.text}>Contenido de la pantalla</Text>}
+      {!menuVisible && <Text style={styles.text}>Supervisor</Text>}
     </View>
   );
 };
@@ -33,7 +37,7 @@ const Cliente: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#E9F5EB',
+    backgroundColor: '#789cb3',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -41,15 +45,15 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 50,
     left: 20,
-    backgroundColor: '#74C69D',
+    backgroundColor: '#789cb3',
     padding: 10,
     borderRadius: 8,
   },
   text: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#2D6A4F',
+    color:"rgb(0, 0, 0)",
   },
 });
 
-export default Cliente;
+export default Supervisor;

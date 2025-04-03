@@ -8,68 +8,89 @@ import {
   ListRenderItem,
 } from 'react-native';
 
+// Interfaz del movimiento (adaptado al modelo de Prisma)
 export interface Movement {
-  id: string;
-  locomotiveNumber: string;
-  fromTrack: string;
-  toTrack: string;
-  requestDateTime: string;
-  movementTime: string;
-  values: string;
-  incidentRecord: string;
-  Imprevisto: boolean;
-  status: string;
+  id: number;
+  locomotora: number;
+  viaOrigen: number;
+  viaDestino: number;
+  tipoAccion: string;
+  clienteId: number;
+  supervisorId?: number | null;
+  coordinadorId?: number | null;
+  operadorId?: number | null;
+  maquinistaId?: number | null;
+  empresaId: number;
+  fechaSolicitud: string;
+  fechaInicio?: string | null;
+  fechaFin?: string | null;
+  estado: string;
+  instrucciones?: string | null;
+  comentarioPostergacion?: string | null;
+  nuevaFechaPostergacion?: string | null;
 }
 
-interface MovimientosTableProps {
+interface Props {
   data: Movement[];
 }
 
-const MovimientosTable: React.FC<MovimientosTableProps> = ({ data }) => {
-  // Renderiza cada fila de la tabla
+const MovimientosTable: React.FC<Props> = ({ data }) => {
   const renderItem: ListRenderItem<Movement> = ({ item, index }) => {
-    const rowBackground = index % 2 === 0 ? styles.rowEven : styles.rowOdd;
+    const rowStyle = index % 2 === 0 ? styles.rowEven : styles.rowOdd;
+
     return (
-      <View style={[styles.row, rowBackground]}>
-        <Text style={[styles.cell, styles.cellId]}>{item.id}</Text>
-        <Text style={[styles.cell, styles.cellLocomotive]}>{item.locomotiveNumber}</Text>
-        <Text style={[styles.cell, styles.cellFromTrack]}>{item.fromTrack}</Text>
-        <Text style={[styles.cell, styles.cellToTrack]}>{item.toTrack}</Text>
-        <Text style={[styles.cell, styles.cellDateTime]}>{item.requestDateTime}</Text>
-        <Text style={[styles.cell, styles.cellMovementTime]}>{item.movementTime}</Text>
-        <Text style={[styles.cell, styles.cellValues]}>{item.values}</Text>
-        <Text style={[styles.cell, styles.cellIncident]}>{item.incidentRecord}</Text>
-        <Text style={[styles.cell, styles.cellPrinted]}>
-          {item.Imprevisto ? 'Imprevisto' : 'Sin imprevisto'}
-        </Text>
-        <Text style={[styles.cell, styles.cellStatus]}>{item.status}</Text>
+      <View style={[styles.row, rowStyle]}>
+        <Text style={[styles.cell, styles.colId]}>{item.id}</Text>
+        <Text style={[styles.cell, styles.colShort]}>{item.locomotora}</Text>
+        <Text style={[styles.cell, styles.colShort]}>{item.viaOrigen}</Text>
+        <Text style={[styles.cell, styles.colShort]}>{item.viaDestino}</Text>
+        <Text style={[styles.cell, styles.colMedium]}>{item.tipoAccion}</Text>
+        <Text style={[styles.cell, styles.colShort]}>{item.clienteId}</Text>
+        <Text style={[styles.cell, styles.colShort]}>{item.supervisorId ?? '-'}</Text>
+        <Text style={[styles.cell, styles.colShort]}>{item.coordinadorId ?? '-'}</Text>
+        <Text style={[styles.cell, styles.colShort]}>{item.operadorId ?? '-'}</Text>
+        <Text style={[styles.cell, styles.colShort]}>{item.maquinistaId ?? '-'}</Text>
+        <Text style={[styles.cell, styles.colShort]}>{item.empresaId}</Text>
+        <Text style={[styles.cell, styles.colLong]}>{item.fechaSolicitud}</Text>
+        <Text style={[styles.cell, styles.colLong]}>{item.fechaInicio || '-'}</Text>
+        <Text style={[styles.cell, styles.colLong]}>{item.fechaFin || '-'}</Text>
+        <Text style={[styles.cell, styles.colMedium]}>{item.estado}</Text>
+        <Text style={[styles.cell, styles.colXL]}>{item.instrucciones || '-'}</Text>
+        <Text style={[styles.cell, styles.colXL]}>{item.comentarioPostergacion || '-'}</Text>
+        <Text style={[styles.cell, styles.colLong]}>{item.nuevaFechaPostergacion || '-'}</Text>
       </View>
     );
   };
 
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator>
+    <ScrollView horizontal>
       <View>
-        {/* Encabezado de la tabla */}
         <View style={styles.headerRow}>
-          <Text style={[styles.headerCell, styles.cellId]}>#</Text>
-          <Text style={[styles.headerCell, styles.cellLocomotive]}>No. Locomotora</Text>
-          <Text style={[styles.headerCell, styles.cellFromTrack]}>De vía</Text>
-          <Text style={[styles.headerCell, styles.cellToTrack]}>Para vía</Text>
-          <Text style={[styles.headerCell, styles.cellDateTime]}>Fecha y hora</Text>
-          <Text style={[styles.headerCell, styles.cellMovementTime]}>Tiempo</Text>
-          <Text style={[styles.headerCell, styles.cellValues]}>Valores</Text>
-          <Text style={[styles.headerCell, styles.cellIncident]}>Incidente</Text>
-          <Text style={[styles.headerCell, styles.cellPrinted]}>Imprevisto</Text>
-          <Text style={[styles.headerCell, styles.cellStatus]}>Estado</Text>
+          <Text style={[styles.headerCell, styles.colId]}>ID</Text>
+          <Text style={[styles.headerCell, styles.colShort]}>Locomotora</Text>
+          <Text style={[styles.headerCell, styles.colShort]}>Vía Origen</Text>
+          <Text style={[styles.headerCell, styles.colShort]}>Vía Destino</Text>
+          <Text style={[styles.headerCell, styles.colMedium]}>Acción</Text>
+          <Text style={[styles.headerCell, styles.colShort]}>Cliente</Text>
+          <Text style={[styles.headerCell, styles.colShort]}>Supervisor</Text>
+          <Text style={[styles.headerCell, styles.colShort]}>Coordinador</Text>
+          <Text style={[styles.headerCell, styles.colShort]}>Operador</Text>
+          <Text style={[styles.headerCell, styles.colShort]}>Maquinista</Text>
+          <Text style={[styles.headerCell, styles.colShort]}>Empresa</Text>
+          <Text style={[styles.headerCell, styles.colLong]}>Fecha Solicitud</Text>
+          <Text style={[styles.headerCell, styles.colLong]}>Fecha Inicio</Text>
+          <Text style={[styles.headerCell, styles.colLong]}>Fecha Fin</Text>
+          <Text style={[styles.headerCell, styles.colMedium]}>Estado</Text>
+          <Text style={[styles.headerCell, styles.colXL]}>Instrucciones</Text>
+          <Text style={[styles.headerCell, styles.colXL]}>Comentario</Text>
+          <Text style={[styles.headerCell, styles.colLong]}>Nueva Fecha</Text>
         </View>
-        {/* Lista de datos */}
+
         <FlatList
           data={data}
           renderItem={renderItem}
-          keyExtractor={(item) => item.id}
-          style={styles.list}
-          contentContainerStyle={{ paddingBottom: 16 }}
+          keyExtractor={(item) => item.id.toString()}
+          contentContainerStyle={{ paddingBottom: 20 }}
         />
       </View>
     </ScrollView>
@@ -78,58 +99,48 @@ const MovimientosTable: React.FC<MovimientosTableProps> = ({ data }) => {
 
 export default MovimientosTable;
 
-// Estilos de la tabla
 const styles = StyleSheet.create({
   headerRow: {
     flexDirection: 'row',
     backgroundColor: '#2D6A4F',
     paddingVertical: 10,
-    borderRadius: 6,
-    marginBottom: 8,
+    borderTopLeftRadius: 6,
+    borderTopRightRadius: 6,
+    marginBottom: 4,
   },
   headerCell: {
     textAlign: 'center',
     fontWeight: 'bold',
     color: '#FFF',
     fontSize: 12,
-    paddingHorizontal: 4,
-    paddingVertical: 4,
+    padding: 6,
     borderRightWidth: 1,
     borderRightColor: '#2D6A4F',
   },
   row: {
     flexDirection: 'row',
-    paddingVertical: 8,
     alignItems: 'center',
     borderBottomWidth: 1,
     borderBottomColor: '#DDD',
   },
   rowEven: {
-    backgroundColor: '#FFF',
+    backgroundColor: '#FFFFFF',
   },
   rowOdd: {
     backgroundColor: '#F1F1F1',
   },
   cell: {
     textAlign: 'center',
-    color: '#555',
     fontSize: 11,
-    paddingHorizontal: 4,
-    paddingVertical: 4,
+    color: '#333',
+    padding: 6,
     borderRightWidth: 1,
     borderRightColor: '#DDD',
   },
-  cellId: { width: 50 },
-  cellLocomotive: { width: 100 },
-  cellFromTrack: { width: 80 },
-  cellToTrack: { width: 80 },
-  cellDateTime: { width: 150 },
-  cellMovementTime: { width: 120 },
-  cellValues: { width: 80 },
-  cellIncident: { width: 150 },
-  cellPrinted: { width: 80 },
-  cellStatus: { width: 100 },
-  list: {
-    marginTop: 8,
-  },
+  // Column widths
+  colId: { width: 50 },
+  colShort: { width: 90 },
+  colMedium: { width: 120 },
+  colLong: { width: 160 },
+  colXL: { width: 220 },
 });
