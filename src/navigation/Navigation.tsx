@@ -39,13 +39,14 @@ import Movimientos from '../Component/Movimientos/Movimientos';
 import Cliente from '../screens/Pantalla/Cliente/Cliente';
 import Usuario from '../Component/Usuario/Usuario';
 import Supervisor from '../screens/Pantalla/Supervisor/Subervisor';
-
+import LocalidadVias from '../Component/Localidad_Vias/LocalidadVias'; // Nueva pantalla para "Localidad y Vi
 // Definición del stack y tipado de rutas
 export type RootStackParamList = {
   Splash: undefined;
   Login: undefined;
   Cliente: undefined;
   Movimientos: undefined;
+  Localidad: undefined;
   Usuario: undefined;
   Supervisor: undefined;
 };
@@ -77,6 +78,13 @@ export default function Navigation() {
           component={Supervisor}
           options={{ headerShown: false }}
         />
+     <Stack.Screen
+  name="Localidad"
+  component={LocalidadVias}
+  options={{ headerShown: true }}
+/>
+
+
         <Stack.Screen
           name="Cliente"
           component={Cliente}

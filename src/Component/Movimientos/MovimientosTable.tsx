@@ -8,7 +8,7 @@ import {
   ListRenderItem,
 } from 'react-native';
 
-// Interfaz del movimiento (adaptado al modelo de Prisma)
+// Interfaz del movimiento
 export interface Movement {
   id: number;
   locomotora: number;
@@ -63,34 +63,40 @@ const MovimientosTable: React.FC<Props> = ({ data }) => {
   };
 
   return (
-    <ScrollView horizontal>
-      <View>
+    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+      <View style={styles.tableWrapper}>
         <View style={styles.headerRow}>
-          <Text style={[styles.headerCell, styles.colId]}>ID</Text>
-          <Text style={[styles.headerCell, styles.colShort]}>Locomotora</Text>
-          <Text style={[styles.headerCell, styles.colShort]}>Vía Origen</Text>
-          <Text style={[styles.headerCell, styles.colShort]}>Vía Destino</Text>
-          <Text style={[styles.headerCell, styles.colMedium]}>Acción</Text>
-          <Text style={[styles.headerCell, styles.colShort]}>Cliente</Text>
-          <Text style={[styles.headerCell, styles.colShort]}>Supervisor</Text>
-          <Text style={[styles.headerCell, styles.colShort]}>Coordinador</Text>
-          <Text style={[styles.headerCell, styles.colShort]}>Operador</Text>
-          <Text style={[styles.headerCell, styles.colShort]}>Maquinista</Text>
-          <Text style={[styles.headerCell, styles.colShort]}>Empresa</Text>
-          <Text style={[styles.headerCell, styles.colLong]}>Fecha Solicitud</Text>
-          <Text style={[styles.headerCell, styles.colLong]}>Fecha Inicio</Text>
-          <Text style={[styles.headerCell, styles.colLong]}>Fecha Fin</Text>
-          <Text style={[styles.headerCell, styles.colMedium]}>Estado</Text>
-          <Text style={[styles.headerCell, styles.colXL]}>Instrucciones</Text>
-          <Text style={[styles.headerCell, styles.colXL]}>Comentario</Text>
-          <Text style={[styles.headerCell, styles.colLong]}>Nueva Fecha</Text>
+          {[
+            { label: 'ID', style: styles.colId },
+            { label: 'Locomotora', style: styles.colShort },
+            { label: 'Vía Origen', style: styles.colShort },
+            { label: 'Vía Destino', style: styles.colShort },
+            { label: 'Acción', style: styles.colMedium },
+            { label: 'Cliente', style: styles.colShort },
+            { label: 'Supervisor', style: styles.colShort },
+            { label: 'Coordinador', style: styles.colShort },
+            { label: 'Operador', style: styles.colShort },
+            { label: 'Maquinista', style: styles.colShort },
+            { label: 'Empresa', style: styles.colShort },
+            { label: 'Fecha Solicitud', style: styles.colLong },
+            { label: 'Fecha Inicio', style: styles.colLong },
+            { label: 'Fecha Fin', style: styles.colLong },
+            { label: 'Estado', style: styles.colMedium },
+            { label: 'Instrucciones', style: styles.colXL },
+            { label: 'Comentario', style: styles.colXL },
+            { label: 'Nueva Fecha', style: styles.colLong },
+          ].map((col, idx) => (
+            <Text key={idx} style={[styles.headerCell, col.style]}>
+              {col.label}
+            </Text>
+          ))}
         </View>
 
         <FlatList
           data={data}
           renderItem={renderItem}
           keyExtractor={(item) => item.id.toString()}
-          contentContainerStyle={{ paddingBottom: 20 }}
+          contentContainerStyle={{ paddingBottom: 40 }}
         />
       </View>
     </ScrollView>
@@ -100,42 +106,52 @@ const MovimientosTable: React.FC<Props> = ({ data }) => {
 export default MovimientosTable;
 
 const styles = StyleSheet.create({
+  tableWrapper: {
+    minWidth: 1200,
+  },
   headerRow: {
     flexDirection: 'row',
     backgroundColor: '#2D6A4F',
     paddingVertical: 10,
     borderTopLeftRadius: 6,
     borderTopRightRadius: 6,
-    marginBottom: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
   },
   headerCell: {
     textAlign: 'center',
     fontWeight: 'bold',
     color: '#FFF',
     fontSize: 12,
-    padding: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
     borderRightWidth: 1,
-    borderRightColor: '#2D6A4F',
+    borderRightColor: '#1b4d3e',
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     borderBottomWidth: 1,
     borderBottomColor: '#DDD',
+    paddingVertical: 6,
   },
   rowEven: {
     backgroundColor: '#FFFFFF',
   },
   rowOdd: {
-    backgroundColor: '#F1F1F1',
+    backgroundColor: '#F6F6F6',
   },
   cell: {
     textAlign: 'center',
     fontSize: 11,
     color: '#333',
-    padding: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 6,
     borderRightWidth: 1,
-    borderRightColor: '#DDD',
+    borderRightColor: '#EEE',
   },
   // Column widths
   colId: { width: 50 },

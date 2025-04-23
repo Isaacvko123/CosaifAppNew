@@ -1,28 +1,4 @@
-/**
- * Login.tsx
- *
- * Pantalla de autenticación de usuario.
- *
- * Esta vista permite a los usuarios iniciar sesión mediante usuario y contraseña.
- * Realiza una solicitud HTTP al backend, recibe un token JWT y lo almacena en AsyncStorage.
- * Luego redirige al usuario a una pantalla específica según su rol.
- *
- * Funcionalidad:
- * - Validación básica de campos.
- * - Comunicación con backend vía `fetch`.
- * - Manejo de errores de red y errores de autenticación.
- * - Persistencia del token y usuario autenticado.
- * - Redirección por rol.
- * - Iconos con FontAwesome y gradiente visual con `expo-linear-gradient`.
- *
- * Navegación:
- * - Utiliza React Navigation para navegar hacia:
- *   - `Cliente` (rol = "CLIENTE")
- *   - `Supervisor` (rol = "SUPERVISOR")
- *   - `Home` (otros)
- */
-
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -33,8 +9,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  Animated,
 } from 'react-native';
-
 import { LinearGradient } from 'expo-linear-gradient';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -51,62 +27,88 @@ type NavigationProp = StackNavigationProp<RootStackParamList>;
 
 const Login = () => {
   const navigation = useNavigation<NavigationProp>();
-
   const [showPassword, setShowPassword] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
-  /**
-   * Maneja el proceso de login:
-   * - Envía la solicitud POST al backend.
-   * - Almacena token y datos del usuario en AsyncStorage.
-   * - Redirige según el rol del usuario autenticado.
-   */
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+
   const handleLogin = async () => {
+    setError('');
+
+    if (!username.trim() || !password.trim()) {
+      setError('Por favor, completa todos los campos');
+      return;
+    }
+
     try {
-      const response = await fetch('http://192.168.100.13:3000/usuarios/login', {
+      await AsyncStorage.multiRemove(['token', 'rol', 'user']);
+
+      const response = await fetch('http://192.168.101.20:3000/usuarios/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ nombre: username, contrasena: password }),
       });
-  
+
       const data = await response.json();
-  
+
       if (!response.ok) {
-        setError(data.error || 'Error en la autenticación');
+        setError(data?.error ?? 'Error en la autenticación');
         return;
       }
-  
+
       const { token, user } = data;
-  
-      // Guardamos todo el usuario tal como viene del backend
+
       await AsyncStorage.multiSet([
         ['token', token],
         ['rol', user.rol],
         ['user', JSON.stringify(user)],
       ]);
-  
-      // Mensaje de bienvenida con el nombre
+
       Alert.alert('Bienvenido', `${user.nombre}`);
-  
+
       switch (user.rol) {
         case 'CLIENTE':
           navigation.navigate('Cliente');
           break;
         case 'SUPERVISOR':
-          navigation.navigate('Supervisor');
+          if (user.empresa?.nombre?.toLowerCase() === 'vianko') {
+            navigation.navigate('Supervisor');
+          } else {
+            navigation.navigate('Cliente');
+          }
           break;
         default:
           navigation.navigate('Home');
-          break;
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error de red o solicitud:', err);
+      Alert.alert(
+        'Error',
+        err?.message?.includes('Network request failed')
+          ? 'Conéctate a una red'
+          : 'El servidor no responde. Por favor, contacte a soporte'
+      );
       setError('Error de red, intente más tarde');
     }
   };
-  
+
+  const animateIn = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 0.95,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const animateOut = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 1,
+      friction: 3,
+      useNativeDriver: true,
+    }).start();
+  };
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -118,18 +120,20 @@ const Login = () => {
           <Text style={styles.title}>Bienvenido</Text>
 
           <View style={styles.inputContainer}>
-            <FontAwesome5 name="user" size={20} color="#888" style={styles.icon} />
+            <FontAwesome5 name="user" size={18} color="#4B5563" />
             <TextInput
               style={styles.input}
               placeholder="Usuario"
               placeholderTextColor="#888"
               value={username}
               onChangeText={setUsername}
+              autoCapitalize="none"
+              autoCorrect={false}
             />
           </View>
 
           <View style={styles.inputContainer}>
-            <FontAwesome5 name="lock" size={20} color="#888" style={styles.icon} />
+            <FontAwesome5 name="lock" size={18} color="#4B5563" />
             <TextInput
               style={styles.input}
               placeholder="Contraseña"
@@ -137,12 +141,14 @@ const Login = () => {
               secureTextEntry={!showPassword}
               value={password}
               onChangeText={setPassword}
+              autoCapitalize="none"
+              autoCorrect={false}
             />
             <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
               <FontAwesome5
                 name={showPassword ? 'eye' : 'eye-slash'}
-                size={20}
-                color="#888"
+                size={18}
+                color="#4B5563"
                 style={styles.iconRight}
               />
             </TouchableOpacity>
@@ -150,9 +156,17 @@ const Login = () => {
 
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-          <TouchableOpacity style={styles.button} onPress={handleLogin}>
-            <Text style={styles.buttonText}>Ingresar</Text>
-          </TouchableOpacity>
+          <Animated.View style={{ transform: [{ scale: scaleAnim }], width: '100%' }}>
+            <TouchableOpacity
+              style={styles.button}
+              activeOpacity={0.8}
+              onPressIn={animateIn}
+              onPressOut={animateOut}
+              onPress={handleLogin}
+            >
+              <Text style={styles.buttonText}>Ingresar</Text>
+            </TouchableOpacity>
+          </Animated.View>
         </View>
       </LinearGradient>
     </KeyboardAvoidingView>
@@ -160,84 +174,78 @@ const Login = () => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  container: { flex: 1 },
   background: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   loginContainer: {
-    width: '85%',
-    backgroundColor: 'rgba(255,255,255,0.95)',
-    borderRadius: 25,
+    width: '90%',
+    backgroundColor: '#ffffffee',
+    borderRadius: 20,
     padding: 25,
     alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.2,
-    shadowRadius: 15,
-    elevation: 10,
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 6,
   },
   logo: {
-    width: 120,
-    height: 120,
+    width: 100,
+    height: 100,
     resizeMode: 'contain',
-    marginBottom: 15,
+    marginBottom: 10,
   },
   title: {
-    fontSize: 30,
-    fontWeight: 'bold',
+    fontSize: 28,
+    fontWeight: '700',
     color: '#2D6A4F',
-    marginBottom: 20,
+    marginBottom: 25,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     width: '100%',
-    height: 50,
-    backgroundColor: '#E9F5EB',
-    borderRadius: 12,
+    height: 48,
+    backgroundColor: '#F0FDF4',
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: '#A3D9A5',
-    marginBottom: 15,
-    paddingHorizontal: 10,
+    marginBottom: 12,
+    paddingHorizontal: 12,
   },
   input: {
     flex: 1,
-    height: '100%',
     fontSize: 16,
-    paddingHorizontal: 10,
-  },
-  icon: {
-    marginLeft: 5,
+    color: '#111827',
+    marginLeft: 10,
   },
   iconRight: {
-    marginRight: 10,
+    marginLeft: 10,
   },
   button: {
-    width: '100%',
+    backgroundColor: '#40916C',
     height: 50,
-    backgroundColor: '#74C69D',
+    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 12,
-    marginTop: 10,
-    shadowColor: '#74C69D',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
+    shadowColor: '#40916C',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
   },
   buttonText: {
     color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
+    fontSize: 17,
+    fontWeight: '600',
   },
   errorText: {
-    color: 'red',
+    color: 'crimson',
     fontSize: 14,
-    marginBottom: 10,
+    marginBottom: 8,
+    textAlign: 'center',
   },
 });
 

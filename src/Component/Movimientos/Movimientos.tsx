@@ -1,21 +1,21 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Dimensions,
+} from 'react-native';
 
 import MovimientosTable, { Movement } from './MovimientosTable';
 import Tabs from './Tabs';
 import NewMovementForm from './Formulario/NewMovementForm';
 
 const Movimientos: React.FC = () => {
-  // Estado: pestaña activa ('Actuales' o 'Pasados')
   const [activeTab, setActiveTab] = useState<'Actuales' | 'Pasados'>('Actuales');
-  // Estado: datos a mostrar en la tabla
   const [data, setData] = useState<Movement[]>([]);
-  // Estado: mostrar formulario de nuevo movimiento
   const [showNewMovement, setShowNewMovement] = useState(false);
 
-  /**
-   * Datos simulados para movimientos "Actuales"
-   */
   const dataActuales: Movement[] = [
     {
       id: 1,
@@ -39,9 +39,6 @@ const Movimientos: React.FC = () => {
     },
   ];
 
-  /**
-   * Datos simulados para movimientos "Pasados"
-   */
   const dataPasados: Movement[] = [
     {
       id: 2,
@@ -65,40 +62,40 @@ const Movimientos: React.FC = () => {
     },
   ];
 
-  // Actualiza los datos a mostrar según la pestaña activa
   useEffect(() => {
-    setShowNewMovement(false); // Oculta formulario al cambiar de pestaña
+    setShowNewMovement(false);
     setData(activeTab === 'Actuales' ? dataActuales : dataPasados);
   }, [activeTab]);
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>
-        {activeTab === 'Actuales' ? 'Movimientos Actuales' : 'Movimientos Pasados'}
-      </Text>
-
-      {/* Navegación por pestañas */}
-      <Tabs
-        tabs={['Actuales', 'Pasados']}
-        activeTab={activeTab}
-        onTabPress={(tab) => setActiveTab(tab as 'Actuales' | 'Pasados')}
-      />
-
-      {/* Vista condicional: formulario o tabla */}
       {showNewMovement ? (
         <NewMovementForm onFinish={() => setShowNewMovement(false)} />
       ) : (
-        <MovimientosTable data={data} />
-      )}
+        <>
+          <Text style={styles.title}>
+            {activeTab === 'Actuales' ? 'Movimientos Actuales' : 'Historial de Movimientos'}
+          </Text>
 
-      {/* Botón para registrar nuevo movimiento, centrado y separado */}
-      {activeTab === 'Actuales' && !showNewMovement && (
-        <TouchableOpacity
-          style={styles.newButton}
-          onPress={() => setShowNewMovement(true)}
-        >
-          <Text style={styles.newButtonText}>Nuevo Movimiento</Text>
-        </TouchableOpacity>
+          <Tabs
+            tabs={['Actuales', 'Pasados']}
+            activeTab={activeTab}
+            onTabPress={(tab) => setActiveTab(tab as 'Actuales' | 'Pasados')}
+          />
+
+          <View style={styles.contentWrapper}>
+            <MovimientosTable data={data} />
+          </View>
+
+          {activeTab === 'Actuales' && (
+            <TouchableOpacity
+              style={styles.newButton}
+              onPress={() => setShowNewMovement(true)}
+            >
+              <Text style={styles.newButtonText}>+ Nuevo Movimiento</Text>
+            </TouchableOpacity>
+          )}
+        </>
       )}
     </View>
   );
@@ -106,30 +103,39 @@ const Movimientos: React.FC = () => {
 
 export default Movimientos;
 
+const { width } = Dimensions.get('window');
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
-    backgroundColor: '#F4F6F8',
+    paddingHorizontal: width * 0.05,
+    paddingTop: 20,
+    backgroundColor: '#F0F4F8',
   },
   title: {
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: '700',
     color: '#2D6A4F',
     textAlign: 'center',
-    marginBottom: 20,
+    marginBottom: 12,
+  },
+  contentWrapper: {
+    flex: 1,
+    marginTop: 12,
   },
   newButton: {
     alignSelf: 'center',
     backgroundColor: '#2D6A4F',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 10,
     marginTop: 20,
+    marginBottom: 30,
     shadowColor: '#000',
     shadowOpacity: 0.2,
-    shadowRadius: 3,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 3 },
+    shadowRadius: 5,
+    elevation: 4,
   },
   newButtonText: {
     color: '#FFF',

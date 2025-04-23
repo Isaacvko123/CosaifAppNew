@@ -14,10 +14,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { formStylesPorRol, rolFormMap } from './FormStyles';
 
-// Tipado del usuario
 interface UserData {
   id: number;
-  usuario: string;
+  nombre: string;
   email: string;
   rol: string;
   empresaId: number;
@@ -25,26 +24,23 @@ interface UserData {
   empresa?: { nombre: string };
 }
 
-interface EditarUsuarioProps {
+interface EditarnombreProps {
   onFinish: () => void;
   userData?: UserData;
 }
 
-const EditarUsuario: React.FC<EditarUsuarioProps> = ({ onFinish, userData: propUserData }) => {
+const Editarnombre: React.FC<EditarnombreProps> = ({ onFinish, userData: propUserData }) => {
   const [userData, setUserData] = useState<UserData | null>(propUserData || null);
   const [loading, setLoading] = useState<boolean>(!propUserData);
 
-  // Campos
-  const [usuario, setUsuario] = useState('');
+  const [nombre, setnombre] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
-  // Visibilidad de contraseñas
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  // Cargar datos (si no vienen por props, se obtienen de AsyncStorage)
   useEffect(() => {
     const fetchUserData = async () => {
       try {
@@ -53,11 +49,11 @@ const EditarUsuario: React.FC<EditarUsuarioProps> = ({ onFinish, userData: propU
           if (storedUser) {
             const parsedUser: UserData = JSON.parse(storedUser);
             setUserData(parsedUser);
-            setUsuario(parsedUser.usuario);
+            setnombre(parsedUser.nombre);
             setEmail(parsedUser.email);
           }
         } else {
-          setUsuario(propUserData.usuario);
+          setnombre(propUserData.nombre);
           setEmail(propUserData.email);
         }
       } catch (error) {
@@ -70,13 +66,12 @@ const EditarUsuario: React.FC<EditarUsuarioProps> = ({ onFinish, userData: propU
   }, [propUserData]);
 
   const handleSave = async () => {
-    // Validaciones
-    if (!usuario || !email) {
-      Alert.alert('Error', 'Completa los campos obligatorios: usuario y email.');
+    if (!nombre || !email) {
+      Alert.alert('Error', 'Completa los campos obligatorios: nombre y email.');
       return;
     }
-    if (!/^\S+$/.test(usuario)) {
-      Alert.alert('Error', 'El nombre de usuario no debe contener espacios.');
+    if (!/^\S+$/.test(nombre)) {
+      Alert.alert('Error', 'El nombre no debe contener espacios.');
       return;
     }
     if (!/^\S+@\S+\.\S+$/.test(email)) {
@@ -94,15 +89,14 @@ const EditarUsuario: React.FC<EditarUsuarioProps> = ({ onFinish, userData: propU
       }
     }
 
-    // Construir objeto
-    const updatedUser: Partial<UserData> & { contrasena?: string } = { usuario, email };
+    const updatedUser: Partial<UserData> & { contrasena?: string } = { nombre, email };
     if (password) {
       updatedUser.contrasena = password;
     }
 
     try {
       const token = await AsyncStorage.getItem('token');
-      const response = await fetch(`http://192.168.100.13:3000/usuarios/${userData!.id}`, {
+      const response = await fetch(`http://192.168.101.20:3000/usuarios/${userData!.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -127,7 +121,7 @@ const EditarUsuario: React.FC<EditarUsuarioProps> = ({ onFinish, userData: propU
 
   if (loading) {
     return (
-      <View style={localStyles.loadingContainer}>
+      <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#2D6A4F" />
       </View>
     );
@@ -135,44 +129,40 @@ const EditarUsuario: React.FC<EditarUsuarioProps> = ({ onFinish, userData: propU
 
   if (!userData) {
     return (
-      <View style={localStyles.loadingContainer}>
-        <Text style={localStyles.errorText}>No se encontraron datos del usuario.</Text>
+      <View style={styles.loadingContainer}>
+        <Text style={styles.errorText}>No se encontraron datos del usuario.</Text>
       </View>
     );
   }
 
-  // Estilos dinámicos
   const roleKey = rolFormMap[userData.rol] || 'CLIENTE';
   const dynamicStyles = formStylesPorRol[roleKey];
 
   return (
     <KeyboardAvoidingView
-      style={localStyles.container}
+      style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <View style={localStyles.card}>
-        <Text style={[localStyles.title, { color: dynamicStyles.title.color }]}>
-          <FontAwesome5 name="user-edit" size={24} color={dynamicStyles.title.color} />{' '}
-          Editar Usuario
+      <View style={styles.card}>
+        <Text style={[styles.title, { color: dynamicStyles.title.color }]}>
+          <FontAwesome5 name="user-edit" size={24} color={dynamicStyles.title.color} /> Editar nombre
         </Text>
 
-        {/* Usuario */}
-        <View style={localStyles.inputWrapper}>
-          <FontAwesome5 name="user" size={18} color="#999" style={localStyles.inputIcon} />
+        <View style={styles.inputWrapper}>
+          <FontAwesome5 name="user" size={18} color="#999" style={styles.inputIcon} />
           <TextInput
-            style={localStyles.input}
-            value={usuario}
-            onChangeText={setUsuario}
-            placeholder="Usuario"
+            style={styles.input}
+            value={nombre}
+            onChangeText={setnombre}
+            placeholder="Nombre"
             placeholderTextColor="#BBB"
           />
         </View>
 
-        {/* Email */}
-        <View style={localStyles.inputWrapper}>
-          <FontAwesome5 name="envelope" size={18} color="#999" style={localStyles.inputIcon} />
+        <View style={styles.inputWrapper}>
+          <FontAwesome5 name="envelope" size={18} color="#999" style={styles.inputIcon} />
           <TextInput
-            style={localStyles.input}
+            style={styles.input}
             value={email}
             onChangeText={setEmail}
             placeholder="Email"
@@ -181,54 +171,46 @@ const EditarUsuario: React.FC<EditarUsuarioProps> = ({ onFinish, userData: propU
           />
         </View>
 
-        {/* Contraseña */}
-        <View style={localStyles.inputWrapper}>
-          <FontAwesome5 name="lock" size={18} color="#999" style={localStyles.inputIcon} />
+        <View style={styles.inputWrapper}>
+          <FontAwesome5 name="lock" size={18} color="#999" style={styles.inputIcon} />
           <TextInput
-            style={localStyles.input}
+            style={styles.input}
             value={password}
             onChangeText={setPassword}
             placeholder="Contraseña"
             placeholderTextColor="#BBB"
             secureTextEntry={!showPassword}
           />
-          <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+          <TouchableOpacity onPress={() => setShowPassword(prev => !prev)}>
             <FontAwesome5 name={showPassword ? 'eye' : 'eye-slash'} size={18} color="#999" />
           </TouchableOpacity>
         </View>
 
-        {/* Confirmar Contraseña */}
-        <View style={localStyles.inputWrapper}>
-          <FontAwesome5 name="lock" size={18} color="#999" style={localStyles.inputIcon} />
+        <View style={styles.inputWrapper}>
+          <FontAwesome5 name="lock" size={18} color="#999" style={styles.inputIcon} />
           <TextInput
-            style={localStyles.input}
+            style={styles.input}
             value={confirmPassword}
             onChangeText={setConfirmPassword}
             placeholder="Confirmar Contraseña"
             placeholderTextColor="#BBB"
             secureTextEntry={!showConfirmPassword}
           />
-          <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)}>
+          <TouchableOpacity onPress={() => setShowConfirmPassword(prev => !prev)}>
             <FontAwesome5 name={showConfirmPassword ? 'eye' : 'eye-slash'} size={18} color="#999" />
           </TouchableOpacity>
         </View>
 
-        <View style={localStyles.buttonRow}>
+        <View style={styles.buttonRow}>
           <TouchableOpacity
-            style={[
-              localStyles.saveButton,
-              { backgroundColor: dynamicStyles.confirmButton.backgroundColor },
-            ]}
+            style={[styles.saveButton, { backgroundColor: dynamicStyles.confirmButton.backgroundColor }]}
             onPress={handleSave}
           >
-            <Text style={localStyles.buttonText}>Guardar</Text>
+            <Text style={styles.buttonText}>Guardar</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={localStyles.cancelButton}
-            onPress={onFinish}
-          >
-            <Text style={localStyles.buttonText}>Regresar</Text>
+          <TouchableOpacity style={styles.cancelButton} onPress={onFinish}>
+            <Text style={styles.buttonText}>Regresar</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -236,9 +218,9 @@ const EditarUsuario: React.FC<EditarUsuarioProps> = ({ onFinish, userData: propU
   );
 };
 
-export default EditarUsuario;
+export default Editarnombre;
 
-const localStyles = StyleSheet.create({
+const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#EEF2F5',

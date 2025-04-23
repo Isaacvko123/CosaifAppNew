@@ -1,9 +1,26 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView } from 'react-native';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
 
 import { formStylesBase, formStylesPorRol, rolFormMap } from './formStyles';
 import { MovementFormData } from './NewMovementForm';
+
+export interface Track {
+  id: number;
+  nombre: string;
+}
+
+export interface Localidad {
+  id: number;
+  nombre: string;
+  estado: string;
+}
+
+export interface Empresa {
+  id: number;
+  nombre: string;
+}
 
 interface StepOneProps {
   formData: MovementFormData;
@@ -12,19 +29,17 @@ interface StepOneProps {
     locomotiveNumber?: string;
     fromTrack?: string;
     toTrack?: string;
+    selectedLocalityId?: string;
   };
-  predefinedTracks: number[];
+  predefinedTracks: Track[];
   showFromOptions: boolean;
   setShowFromOptions: React.Dispatch<React.SetStateAction<boolean>>;
   showToOptions: boolean;
   setShowToOptions: React.Dispatch<React.SetStateAction<boolean>>;
+  localities: Localidad[];
 }
 
-// Componente personalizado para simular un CheckBox
-const CustomCheckBox: React.FC<{
-  value: boolean;
-  onValueChange: (newValue: boolean) => void;
-}> = ({ value, onValueChange }) => (
+const CustomCheckBox: React.FC<{ value: boolean; onValueChange: (newValue: boolean) => void }> = ({ value, onValueChange }) => (
   <TouchableOpacity
     onPress={() => onValueChange(!value)}
     style={{
@@ -52,158 +67,311 @@ const StepOne: React.FC<StepOneProps> = ({
   setShowFromOptions,
   showToOptions,
   setShowToOptions,
+  localities: propLocalities,
 }) => {
   const [rolId, setRolId] = useState<number | null>(null);
-  // Mensaje que explica cómo desactivar el servicio con doble clic
+  const [isSupervisor, setIsSupervisor] = useState(false);
   const [serviceExplanation, setServiceExplanation] = useState('');
-  const lastServicePress = useRef<{ [key: string]: number }>({
-    Lavado: 0,
-    Torno: 0,
-  });
+  const [showLocalityOptions, setShowLocalityOptions] = useState(false);
 
-  // Se obtiene el rol del usuario para ajustar los estilos
+  const [filteredTracks, setFilteredTracks] = useState<Track[]>([]);
+  const [tracksLoading, setTracksLoading] = useState(false);
+
+  const [companies, setCompanies] = useState<Empresa[]>([]);
+  const [isViankoUser, setIsViankoUser] = useState(false);
+  const [showCompanyOptions, setShowCompanyOptions] = useState(false);
+  const [userCompany, setUserCompany] = useState('');
+
+  const [localities, setLocalities] = useState<Localidad[]>(propLocalities);
+  const lastServicePress = useRef<{ [key: string]: number }>({ Lavado: 0, Torno: 0 });
+
+  const alertShown = useRef(false);
+
   useEffect(() => {
-    const fetchRolId = async () => {
-      const user = await AsyncStorage.getItem('user');
-      if (user) {
-        const parsed = JSON.parse(user);
-        setRolId(parsed.rolId);
+    const checkNet = NetInfo.addEventListener(state => {
+      if (!state.isConnected && !alertShown.current) {
+        Alert.alert('Sin conexión', 'Conéctate a una red para continuar.');
+        alertShown.current = true;
       }
-    };
-    fetchRolId();
+      if (state.isConnected) {
+        alertShown.current = false;
+      }
+    });
+    return () => checkNet();
   }, []);
 
-  const rolKey = rolFormMap[rolId ?? -1];
-  const dynamicStyles = formStylesPorRol[rolKey] || formStylesPorRol.CLIENTE;
-  const mergedStyles = { ...formStylesBase, ...dynamicStyles };
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const userStr = await AsyncStorage.getItem('user');
+        if (!userStr) throw new Error('Usuario no encontrado');
 
-  // Función que guarda el servicio en formData; si se hace doble clic se quita la selección.
+        const user = JSON.parse(userStr);
+        setRolId(user.rolId);
+        setIsSupervisor(user.rol?.toUpperCase() === 'SUPERVISOR');
+
+        if (!isSupervisor && user.localidadId) {
+          setFormData(prev => ({ ...prev, selectedLocalityId: prev.selectedLocalityId ?? user.localidadId }));
+        }
+
+        if (user.empresa?.nombre?.toLowerCase() === 'vianko') {
+          setIsViankoUser(true);
+          const token = await AsyncStorage.getItem('token');
+          if (!token) throw new Error('Token no encontrado');
+
+          const res = await fetch('http://192.168.101.20:3000/empresas', {
+            headers: { 'Authorization': `Bearer ${token}` },
+          });
+
+          if (!res.ok) throw new Error('Error al obtener empresas');
+          const data = await res.json();
+          setCompanies(data);
+          await AsyncStorage.setItem('companies', JSON.stringify(data));
+        } else {
+          setUserCompany(user.empresa?.nombre || '');
+        }
+      } catch (err) {
+        Alert.alert('Error crítico', 'No se pudo cargar la sesión. Regresando al inicio.');
+        // Aquí podrías redirigir a la pantalla de login o dashboard:
+        // navigation.replace('Login');
+      }
+    };
+
+    fetchUser();
+  }, [setFormData]);
+
+  useEffect(() => {
+    const fetchLocalities = async () => {
+      try {
+        const token = await AsyncStorage.getItem('token');
+        if (!token) throw new Error('Token no encontrado');
+
+        const res = await fetch('http://192.168.101.20:3000/localidades', {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (!res.ok) throw new Error('Fallo al cargar localidades');
+
+        const data = await res.json();
+        setLocalities(data);
+        await AsyncStorage.setItem('localities', JSON.stringify(data));
+      } catch (err) {
+        const fallback = await AsyncStorage.getItem('localities');
+        if (fallback) {
+          setLocalities(JSON.parse(fallback));
+        } else {
+          Alert.alert('Error', 'No se pudieron cargar las localidades.');
+        }
+      }
+    };
+
+    fetchLocalities();
+  }, []);
+
+  useEffect(() => {
+    const fetchTracks = async () => {
+      if (!formData.selectedLocalityId) return setFilteredTracks([]);
+
+      setTracksLoading(true);
+      try {
+        const token = await AsyncStorage.getItem('token');
+        if (!token) throw new Error('Token no encontrado');
+
+        const res = await fetch(`http://192.168.101.20:3000/vias/localidad/${formData.selectedLocalityId}`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+
+        if (!res.ok) throw new Error('Error al obtener vías');
+        const data = await res.json();
+
+        const tracks: Track[] = data.map((v: any) => ({ id: v.id, nombre: v.nombre }));
+        setFilteredTracks(tracks.sort((a, b) => a.nombre.localeCompare(b.nombre)));
+      } catch (error) {
+        Alert.alert('Error', 'No se pudieron cargar las vías.');
+      } finally {
+        setTracksLoading(false);
+      }
+    };
+
+    fetchTracks();
+  }, [formData.selectedLocalityId]);
+
+  const getTrackName = useCallback(
+    (trackId: number | null) => {
+      const list = filteredTracks.length ? filteredTracks : predefinedTracks;
+      return list.find(t => t.id === trackId)?.nombre || '';
+    },
+    [filteredTracks, predefinedTracks]
+  );
+
   const handleServicePress = (service: 'Lavado' | 'Torno') => {
     const now = Date.now();
     if (now - lastServicePress.current[service] < DOUBLE_PRESS_DELAY) {
-      // Doble clic: se quita el servicio (se guardará vacío)
       setFormData({ ...formData, service: '' });
       setServiceExplanation('');
     } else {
-      // Primer clic: se guarda el servicio seleccionado en formData
       setFormData({ ...formData, service });
-      setServiceExplanation('Doble clic en el servicio para quitarlo');
+      setServiceExplanation('Doble clic para desmarcar el servicio');
     }
     lastServicePress.current[service] = now;
   };
 
+  const rolKey = rolFormMap[rolId ?? -1] || 'CLIENTE';
+  const styles = { ...formStylesBase, ...formStylesPorRol[rolKey] };
+
+  const selectedLocality = localities.find(loc => loc.id === formData.selectedLocalityId);
+
   return (
     <View>
-      {/* Sección de Servicio: Guarda el tipo de servicio en formData */}
-      <Text style={mergedStyles.label}>Servicio:</Text>
-      <View style={{ flexDirection: 'row', marginBottom: 10 }}>
-        <TouchableOpacity
-          style={[
-            mergedStyles.optionButton,
-            formData.service === 'Lavado' && mergedStyles.optionButtonSelected,
-          ]}
-          onPress={() => handleServicePress('Lavado')}
-        >
-          <Text style={mergedStyles.optionButtonText}>Lavado</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            mergedStyles.optionButton,
-            formData.service === 'Torno' && mergedStyles.optionButtonSelected,
-          ]}
-          onPress={() => handleServicePress('Torno')}
-        >
-          <Text style={mergedStyles.optionButtonText}>Torno</Text>
-        </TouchableOpacity>
-      </View>
-      {serviceExplanation !== '' && (
-        <Text style={{ marginBottom: 10, fontStyle: 'italic', color: '#555' }}>
-          {serviceExplanation}
-        </Text>
+      {isViankoUser ? (
+        <>
+          <Text style={styles.label}>Empresa (selección):</Text>
+          <TouchableOpacity onPress={() => setShowCompanyOptions(!showCompanyOptions)}>
+            <TextInput
+              style={styles.input}
+              placeholder="Selecciona empresa"
+              editable={false}
+              value={companies.find(c => c.id === formData.empresaId)?.nombre || ''}
+            />
+          </TouchableOpacity>
+          {showCompanyOptions && (
+            <ScrollView style={styles.optionsContainer} nestedScrollEnabled>
+              {companies.map(c => (
+                <TouchableOpacity key={c.id} onPress={() => {
+                  setFormData({ ...formData, empresaId: c.id });
+                  setShowCompanyOptions(false);
+                }}>
+                  <Text style={styles.optionText}>{c.nombre}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
+        </>
+      ) : (
+        <>
+          <Text style={styles.label}>Empresa:</Text>
+          <TextInput style={styles.input} editable={false} value={userCompany} />
+        </>
       )}
 
-      {/* Prioridad: Se guarda la opción de prioridad en formData */}
-      <View style={mergedStyles.centerRow}>
+      {/* Localidad */}
+      <Text style={styles.label}>Localidad:</Text>
+      {isSupervisor ? (
+        <>
+          <TouchableOpacity onPress={() => setShowLocalityOptions(!showLocalityOptions)}>
+            <TextInput
+              style={styles.input}
+              editable={false}
+              value={selectedLocality?.nombre || ''}
+              placeholder="Selecciona una localidad"
+            />
+          </TouchableOpacity>
+          {showLocalityOptions && (
+            <ScrollView style={styles.optionsContainer} nestedScrollEnabled>
+              {localities.map(loc => (
+                <TouchableOpacity key={loc.id} onPress={() => {
+                  setFormData({ ...formData, selectedLocalityId: loc.id });
+                  setShowLocalityOptions(false);
+                }}>
+                  <Text style={styles.optionText}>{loc.nombre}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
+        </>
+      ) : (
+        <TextInput style={styles.input} editable={false} value={selectedLocality?.nombre || ''} />
+      )}
+      {errors.selectedLocalityId && <Text style={styles.errorText}>{errors.selectedLocalityId}</Text>}
+
+      {/* Servicio */}
+      <Text style={styles.label}>Servicio:</Text>
+      <View style={{ flexDirection: 'row', marginBottom: 10 }}>
+        {['Lavado', 'Torno'].map(service => (
+          <TouchableOpacity
+            key={service}
+            style={[
+              styles.optionButton,
+              formData.service === service && styles.optionButtonSelected,
+            ]}
+            onPress={() => handleServicePress(service as 'Lavado' | 'Torno')}
+          >
+            <Text style={styles.optionButtonText}>{service}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      {serviceExplanation && <Text style={{ fontStyle: 'italic', marginBottom: 10 }}>{serviceExplanation}</Text>}
+
+      {/* Prioridad */}
+      <View style={styles.centerRow}>
         <CustomCheckBox
           value={formData.priority}
-          onValueChange={(newValue) => setFormData({ ...formData, priority: newValue })}
+          onValueChange={value => setFormData({ ...formData, priority: value })}
         />
-        <Text style={mergedStyles.label}>
-          Prioridad: {formData.priority ? 'Con alta prioridad' : 'Sin prioridad'}
-        </Text>
+        <Text style={styles.label}>Prioridad: {formData.priority ? 'ALTA' : 'BAJA'}</Text>
       </View>
 
-      {/* Número de locomotora: Se guarda el valor numérico en formData */}
-      <Text style={mergedStyles.label}>Número de locomotora:</Text>
+      {/* Número locomotora */}
+      <Text style={styles.label}>Número de locomotora:</Text>
       <TextInput
-        style={mergedStyles.input}
-        placeholder="Ingresa número de locomotora"
+        style={styles.input}
+        placeholder="Ej: 321"
         keyboardType="numeric"
         value={formData.locomotiveNumber}
-        onChangeText={(text) => {
-          const filteredText = text.replace(/[^0-9]/g, '');
-          setFormData({ ...formData, locomotiveNumber: filteredText });
-        }}
+        onChangeText={text => setFormData({ ...formData, locomotiveNumber: text.replace(/\D/g, '') })}
       />
-      {errors.locomotiveNumber && (
-        <Text style={mergedStyles.errorText}>{errors.locomotiveNumber}</Text>
-      )}
+      {errors.locomotiveNumber && <Text style={styles.errorText}>{errors.locomotiveNumber}</Text>}
 
-      {/* "De vía": Siempre visible y guardado en formData */}
-      <Text style={mergedStyles.label}>De vía:</Text>
+      {/* From Track */}
+      <Text style={styles.label}>De vía:</Text>
       <TouchableOpacity onPress={() => setShowFromOptions(!showFromOptions)}>
         <TextInput
-          style={mergedStyles.input}
-          placeholder="Ejemplo: Vía 1"
-          value={formData.fromTrack.toString()}
+          style={styles.input}
           editable={false}
+          placeholder="Selecciona una vía"
+          value={getTrackName(formData.fromTrack)}
         />
       </TouchableOpacity>
-      {errors.fromTrack && (
-        <Text style={mergedStyles.errorText}>{errors.fromTrack}</Text>
-      )}
+      {errors.fromTrack && <Text style={styles.errorText}>{errors.fromTrack}</Text>}
       {showFromOptions && (
-        <ScrollView style={mergedStyles.optionsContainer} nestedScrollEnabled>
-          {predefinedTracks.map((track) => (
+        <ScrollView style={styles.optionsContainer} nestedScrollEnabled>
+          {(filteredTracks.length ? filteredTracks : predefinedTracks).map(track => (
             <TouchableOpacity
-              key={track.toString()}
+              key={track.id}
               onPress={() => {
-                setFormData({ ...formData, fromTrack: track.toString() });
+                setFormData({ ...formData, fromTrack: track.id });
                 setShowFromOptions(false);
               }}
             >
-              <Text style={mergedStyles.optionText}>{`Vía ${track}`}</Text>
+              <Text style={styles.optionText}>Vía {track.nombre}</Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
       )}
 
-      {/* "Para vía": Se muestra solo en caso de que sea necesario (cuando no se ha seleccionado un servicio) */}
+      {/* To Track */}
       {!formData.service && (
         <>
-          <Text style={mergedStyles.label}>Para vía:</Text>
+          <Text style={styles.label}>Para vía:</Text>
           <TouchableOpacity onPress={() => setShowToOptions(!showToOptions)}>
             <TextInput
-              style={mergedStyles.input}
-              placeholder="Ejemplo: Vía 2"
-              value={formData.toTrack.toString()}
+              style={styles.input}
               editable={false}
+              placeholder="Selecciona una vía"
+              value={getTrackName(formData.toTrack)}
             />
           </TouchableOpacity>
-          {errors.toTrack && (
-            <Text style={mergedStyles.errorText}>{errors.toTrack}</Text>
-          )}
+          {errors.toTrack && <Text style={styles.errorText}>{errors.toTrack}</Text>}
           {showToOptions && (
-            <ScrollView style={mergedStyles.optionsContainer} nestedScrollEnabled>
-              {predefinedTracks.map((track) => (
+            <ScrollView style={styles.optionsContainer} nestedScrollEnabled>
+              {(filteredTracks.length ? filteredTracks : predefinedTracks).map(track => (
                 <TouchableOpacity
-                  key={track.toString()}
+                  key={track.id}
                   onPress={() => {
-                    setFormData({ ...formData, toTrack: track.toString() });
+                    setFormData({ ...formData, toTrack: track.id });
                     setShowToOptions(false);
                   }}
                 >
-                  <Text style={mergedStyles.optionText}>{`Vía ${track}`}</Text>
+                  <Text style={styles.optionText}>Vía {track.nombre}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>

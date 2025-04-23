@@ -1,23 +1,30 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
   ActivityIndicator,
   TouchableOpacity,
   FlatList,
+  Alert,
+  BackHandler,
+  Platform,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { FontAwesome5 } from '@expo/vector-icons';
+import NetInfo from '@react-native-community/netinfo';
 
-// Componentes para editar y crear usuarios
 import EditarUsuario from './EditarUsuario';
 import CrearNuevoUsuario from './NuevoUsuario';
 
-// Estilos
 import { styles } from './UsuarioStyles';
 import { formStylesPorRol, rolFormMap } from './FormStyles';
 
-// Tipado de usuario según backend actualizado
+import type { StackNavigationProp } from '@react-navigation/stack';
+import type { RootStackParamList } from '../../navigation/Navigation'; // Asegúrate de importar desde donde tengas ese archivo
+
+type NavigationProp = StackNavigationProp<RootStackParamList, 'Usuario'>;
+
 interface UserData {
   id: number;
   nombre: string;
@@ -26,58 +33,120 @@ interface UserData {
   empresaId: number;
   empresa?: { nombre: string };
   localidad?: { nombre: string; estado: string };
+  usuario?: string;
+  activo?: boolean;
 }
 
 const Usuario: React.FC = () => {
+  const navigation = useNavigation<NavigationProp>();
   const [usuarios, setUsuarios] = useState<UserData[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingUser, setEditingUser] = useState<UserData | null>(null);
   const [creando, setCreando] = useState(false);
+  const [isConnected, setIsConnected] = useState(true);
+  const [userLogged, setUserLogged] = useState<UserData | null>(null);
 
-  const fetchUsuarios = async () => {
+  // Leer usuario al inicio
+  useEffect(() => {
+    const loadUser = async () => {
+      const raw = await AsyncStorage.getItem('user');
+      if (raw) {
+        setUserLogged(JSON.parse(raw));
+      }
+    };
+    loadUser();
+  }, []);
+
+  // 👉 Manejamos botón físico "atrás"
+  useEffect(() => {
+    const backAction = () => {
+      navigation.replace('Supervisor');
+      return true;
+    };
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+
+    return () => backHandler.remove();
+  }, [navigation]);
+
+  const fetchUsuarios = useCallback(async () => {
+    setLoading(true);
     try {
       const token = await AsyncStorage.getItem('token');
-      const response = await fetch('http://192.168.100.13:3000/usuarios', {
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-      });
-      const data = await response.json();
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
 
-      // Recupera el usuario actual
-      const userString = await AsyncStorage.getItem('user');
-      let currentUserId: number | null = null;
-      if (userString) {
-        const currentUser = JSON.parse(userString);
-        currentUserId = currentUser.id;
-      }
-
-      // Ordena poniendo al usuario actual al inicio
-      if (currentUserId !== null) {
-        data.sort((a: UserData, b: UserData) => {
-          if (a.id === currentUserId) return -1;
-          if (b.id === currentUserId) return 1;
-          return 0;
-        });
-      }
-
-      setUsuarios(data);
-    } catch (error) {
-      console.error('Error fetching usuarios', error);
+      const response = await fetch('http://192.168.101.20:3000/usuarios', { headers });
+      const raw = await response.text();
+      const data = JSON.parse(raw);
+      setUsuarios(Array.isArray(data) ? data : []);
+    } catch (error: any) {
+      Alert.alert('Error', error.message?.includes('Network request failed')
+        ? 'Conéctate a una red'
+        : 'No se pudieron obtener usuarios');
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchUsuarios();
+  }, [fetchUsuarios]);
+
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener(state => {
+      setIsConnected(state.isConnected ?? true);
+    });
+    return unsubscribe;
   }, []);
+
+  const renderItem = useCallback(({ item }: { item: UserData }) => {
+    const roleKey = rolFormMap[item.rol] || 'CLIENTE';
+    const dynamic = formStylesPorRol[roleKey];
+
+    return (
+      <View style={[styles.card, { borderColor: dynamic.title.color, borderWidth: 1 }]}>
+        <Text style={[styles.cardTitle, { color: dynamic.title.color }]}>
+          <FontAwesome5 name="user-circle" size={22} color={dynamic.title.color} /> {item.nombre}
+        </Text>
+        <View style={styles.row}>
+          <FontAwesome5 name="envelope" size={16} color={dynamic.title.color} style={styles.icon} />
+          <Text style={styles.cardText}>Email: {item.email}</Text>
+        </View>
+        <View style={styles.row}>
+          <FontAwesome5 name="user-tag" size={16} color={dynamic.title.color} style={styles.icon} />
+          <Text style={styles.cardText}>Rol: {item.rol}</Text>
+        </View>
+        <View style={styles.row}>
+          <FontAwesome5 name="building" size={16} color={dynamic.title.color} style={styles.icon} />
+          <Text style={styles.cardText}>Empresa: {item.empresa?.nombre || '-'}</Text>
+        </View>
+        <View style={styles.row}>
+          <FontAwesome5 name="map-marker-alt" size={16} color={dynamic.title.color} style={styles.icon} />
+          <Text style={styles.cardText}>
+            Localidad: {item.localidad?.nombre || '-'} ({item.localidad?.estado || ''})
+          </Text>
+        </View>
+
+        <TouchableOpacity
+          style={[styles.editButton, { backgroundColor: dynamic.confirmButton.backgroundColor }]}
+          onPress={() => setEditingUser(item)}
+        >
+          <FontAwesome5 name="edit" size={16} color="#fff" style={styles.buttonIcon} />
+          <Text style={styles.buttonText}>Editar</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }, []);
+
+  const flatListKey = useMemo(() => usuarios.map(u => u.id).join(','), [usuarios]);
 
   if (editingUser) {
     return (
       <EditarUsuario
-        userData={editingUser}
+        userData={{ ...editingUser, activo: true }}
         onFinish={() => {
           setEditingUser(null);
           fetchUsuarios();
@@ -102,95 +171,25 @@ const Usuario: React.FC = () => {
     <View style={styles.mainContainer}>
       <FlatList
         data={usuarios}
+        key={flatListKey}
         keyExtractor={(item) => item.id.toString()}
-        renderItem={({ item }) => {
-          const roleKey = rolFormMap[item.rol] || 'CLIENTE';
-          const dynamic = formStylesPorRol[roleKey];
-
-          return (
-            <View
-              style={[
-                styles.card,
-                { borderColor: dynamic.title.color, borderWidth: 1, marginBottom: 10 },
-              ]}
-            >
-              <Text style={[styles.cardTitle, { color: dynamic.title.color }]}>
-                <FontAwesome5 name="user-circle" size={24} color={dynamic.title.color} />{' '}
-                {item.nombre}
-              </Text>
-
-              <View style={styles.row}>
-                <FontAwesome5
-                  name="envelope"
-                  size={18}
-                  color={dynamic.title.color}
-                  style={styles.icon}
-                />
-                <Text style={styles.cardText}>Email: {item.email}</Text>
-              </View>
-
-              <View style={styles.row}>
-                <FontAwesome5
-                  name="user-tag"
-                  size={18}
-                  color={dynamic.title.color}
-                  style={styles.icon}
-                />
-                <Text style={styles.cardText}>Rol: {item.rol}</Text>
-              </View>
-
-              <View style={styles.row}>
-                <FontAwesome5
-                  name="building"
-                  size={18}
-                  color={dynamic.title.color}
-                  style={styles.icon}
-                />
-                <Text style={styles.cardText}>
-                  Empresa: {item.empresa?.nombre || '-'}
-                </Text>
-              </View>
-
-              <View style={styles.row}>
-                <FontAwesome5
-                  name="map-marker-alt"
-                  size={18}
-                  color={dynamic.title.color}
-                  style={styles.icon}
-                />
-                <Text style={styles.cardText}>
-                  Localidad: {item.localidad?.nombre || '-'} ({item.localidad?.estado || ''})
-                </Text>
-              </View>
-
-              <TouchableOpacity
-                style={[
-                  styles.editButton,
-                  { backgroundColor: dynamic.confirmButton.backgroundColor },
-                ]}
-                onPress={() => setEditingUser(item)}
-              >
-                <FontAwesome5
-                  name="edit"
-                  size={20}
-                  color="#fff"
-                  style={styles.buttonIcon}
-                />
-                <Text style={styles.buttonText}>Editar</Text>
-              </TouchableOpacity>
-            </View>
-          );
-        }}
+        renderItem={renderItem}
+        contentContainerStyle={{ paddingBottom: 80 }}
+        initialNumToRender={10}
+        maxToRenderPerBatch={15}
+        removeClippedSubviews
+        ListEmptyComponent={<Text style={{ textAlign: 'center', marginTop: 20 }}>No hay usuarios</Text>}
       />
 
       <TouchableOpacity
         style={[
           styles.newButton,
-          { backgroundColor: formStylesPorRol['CLIENTE'].navButton.backgroundColor },
+          { backgroundColor: isConnected ? formStylesPorRol['CLIENTE'].navButton.backgroundColor : '#ccc' },
         ]}
         onPress={() => setCreando(true)}
+        disabled={!isConnected}
       >
-        <FontAwesome5 name="plus-circle" size={20} color="#fff" style={styles.buttonIcon} />
+        <FontAwesome5 name="plus-circle" size={18} color="#fff" style={styles.buttonIcon} />
         <Text style={styles.buttonText}>Nuevo Usuario</Text>
       </TouchableOpacity>
     </View>
