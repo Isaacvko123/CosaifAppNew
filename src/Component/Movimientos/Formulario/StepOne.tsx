@@ -132,8 +132,6 @@ const StepOne: React.FC<StepOneProps> = ({
         }
       } catch (err) {
         Alert.alert('Error crítico', 'No se pudo cargar la sesión. Regresando al inicio.');
-        // Aquí podrías redirigir a la pantalla de login o dashboard:
-        // navigation.replace('Login');
       }
     };
 
@@ -222,16 +220,20 @@ const StepOne: React.FC<StepOneProps> = ({
 
   return (
     <View>
+      {/* Empresa */}
       {isViankoUser ? (
         <>
           <Text style={styles.label}>Empresa (selección):</Text>
           <TouchableOpacity onPress={() => setShowCompanyOptions(!showCompanyOptions)}>
+          <View pointerEvents="none">
+
             <TextInput
               style={styles.input}
               placeholder="Selecciona empresa"
               editable={false}
               value={companies.find(c => c.id === formData.empresaId)?.nombre || ''}
             />
+              </View>
           </TouchableOpacity>
           {showCompanyOptions && (
             <ScrollView style={styles.optionsContainer} nestedScrollEnabled>
@@ -258,12 +260,16 @@ const StepOne: React.FC<StepOneProps> = ({
       {isSupervisor ? (
         <>
           <TouchableOpacity onPress={() => setShowLocalityOptions(!showLocalityOptions)}>
+          <View pointerEvents="none">
+
             <TextInput
               style={styles.input}
               editable={false}
               value={selectedLocality?.nombre || ''}
               placeholder="Selecciona una localidad"
             />
+              </View>
+
           </TouchableOpacity>
           {showLocalityOptions && (
             <ScrollView style={styles.optionsContainer} nestedScrollEnabled>
@@ -289,10 +295,7 @@ const StepOne: React.FC<StepOneProps> = ({
         {['Lavado', 'Torno'].map(service => (
           <TouchableOpacity
             key={service}
-            style={[
-              styles.optionButton,
-              formData.service === service && styles.optionButtonSelected,
-            ]}
+            style={[styles.optionButton, formData.service === service && styles.optionButtonSelected]}
             onPress={() => handleServicePress(service as 'Lavado' | 'Torno')}
           >
             <Text style={styles.optionButtonText}>{service}</Text>
@@ -313,23 +316,34 @@ const StepOne: React.FC<StepOneProps> = ({
       {/* Número locomotora */}
       <Text style={styles.label}>Número de locomotora:</Text>
       <TextInput
-        style={styles.input}
-        placeholder="Ej: 321"
-        keyboardType="numeric"
-        value={formData.locomotiveNumber}
-        onChangeText={text => setFormData({ ...formData, locomotiveNumber: text.replace(/\D/g, '') })}
-      />
+      
+  style={styles.input}
+  placeholder="Ej: 321"
+  keyboardType="numeric"
+  value={formData.locomotiveNumber > 0 ? String(formData.locomotiveNumber) : ''}
+  onChangeText={(text) => {
+    const numericValue = text.replace(/\D/g, ''); // Solo números
+    setFormData({
+      ...formData,
+      locomotiveNumber: numericValue ? parseInt(numericValue, 10) : 0, // siempre número
+    });
+  }}
+/>
+
       {errors.locomotiveNumber && <Text style={styles.errorText}>{errors.locomotiveNumber}</Text>}
 
       {/* From Track */}
       <Text style={styles.label}>De vía:</Text>
       <TouchableOpacity onPress={() => setShowFromOptions(!showFromOptions)}>
+      <View pointerEvents="none">
+
         <TextInput
           style={styles.input}
           editable={false}
           placeholder="Selecciona una vía"
           value={getTrackName(formData.fromTrack)}
         />
+        </View>
       </TouchableOpacity>
       {errors.fromTrack && <Text style={styles.errorText}>{errors.fromTrack}</Text>}
       {showFromOptions && (
@@ -348,17 +362,20 @@ const StepOne: React.FC<StepOneProps> = ({
         </ScrollView>
       )}
 
-      {/* To Track */}
+      {/* To Track (if no service) */}
       {!formData.service && (
         <>
           <Text style={styles.label}>Para vía:</Text>
           <TouchableOpacity onPress={() => setShowToOptions(!showToOptions)}>
+          <View pointerEvents="none">
+
             <TextInput
               style={styles.input}
               editable={false}
               placeholder="Selecciona una vía"
               value={getTrackName(formData.toTrack)}
             />
+            </View>
           </TouchableOpacity>
           {errors.toTrack && <Text style={styles.errorText}>{errors.toTrack}</Text>}
           {showToOptions && (

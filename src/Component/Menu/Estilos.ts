@@ -4,8 +4,8 @@ import { StyleSheet } from 'react-native';
 const DesignSystem = {
   spacing: {
     small: 8,
-    medium: 16,
-    large: 24,
+    medium: 22,
+    large: 27,
     xlarge: 32,
   },
   colors: {

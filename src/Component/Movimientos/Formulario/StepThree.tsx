@@ -1,9 +1,25 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert } from 'react-native';
+// StepThree.tsx
+import React, { useEffect, useState, useCallback } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  ActivityIndicator,
+  Alert,
+  StyleSheet,
+} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { formStylesBase as styles, formStylesPorRol, rolFormMap } from './formStyles';
+import {
+  formStylesBase as styles,
+  formStylesPorRol,
+  rolFormMap,
+} from './formStyles';
 import { MovementFormData } from './NewMovementForm';
+
+const API_URL =
+  process.env.EXPO_PUBLIC_API_URL || 'http://192.168.101.20:3000';
 
 interface StepThreeProps {
   formData: MovementFormData;
@@ -11,137 +27,108 @@ interface StepThreeProps {
   onFinish: () => void;
 }
 
-const StepThree: React.FC<StepThreeProps> = ({ formData, setFormData, onFinish }) => {
+const StepThree: React.FC<StepThreeProps> = ({
+  formData,
+  setFormData,
+  onFinish,
+}) => {
   const [rolId, setRolId] = useState<number | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
+  /* ---------- obtiene rol del usuario ---------- */
   useEffect(() => {
-    const fetchUser = async () => {
+    (async () => {
       const userStr = await AsyncStorage.getItem('user');
-      if (userStr) {
-        const parsed = JSON.parse(userStr);
-        setRolId(parsed.rolId);
-      }
-    };
-    fetchUser();
+      if (userStr) setRolId(JSON.parse(userStr).rolId);
+    })();
   }, []);
 
   const rolKey = rolFormMap[rolId ?? -1];
   const dynamicStyles = formStylesPorRol[rolKey] || formStylesPorRol.CLIENTE;
 
-  const handleConfirm = async () => {
+  /* ---------- envía movimiento ---------- */
+  const handleConfirm = useCallback(async () => {
+    if (!formData.movementType) {
+      Alert.alert('⚠️ Error', 'Debes seleccionar el tipo de movimiento antes de continuar.');
+      return;
+    }
+  
     try {
-      // 1. Obtenemos varios valores de AsyncStorage:
-      const keysToGet = ['user', 'companies', 'localities', 'movementFormData'];
-      const allStorage = await AsyncStorage.multiGet(keysToGet);
-
-      console.log('Contenido de AsyncStorage (todas las claves):', JSON.stringify(allStorage, null, 2));
-
-      // 2. Si deseas imprimir solo las "localities" en consola:
-      const localitiesPair = allStorage.find(([key]) => key === 'localities');
-      if (localitiesPair && localitiesPair[1]) {
-        const localitiesData = JSON.parse(localitiesPair[1]);
-        console.log('Localidades en AsyncStorage:', localitiesData);
-      } else {
-        console.log('No se encontraron localidades en AsyncStorage.');
-      }
-
-      // 3. Lógica normal: obtener user, companies, etc.
-      const userStr = await AsyncStorage.getItem('user');
-      let userSegment = {};
-      if (userStr) {
-        const parsed = JSON.parse(userStr);
-        userSegment = {
-          creadoPorId: parsed.id,
-          clienteId: parsed.id,
-        };
-      }
-
-      // 4. Cargar companies y localities para mapear
-      const companiesStr = await AsyncStorage.getItem('companies');
-      const companiesList = companiesStr ? JSON.parse(companiesStr) : [];
-      const localitiesStr = await AsyncStorage.getItem('localities');
-      const localitiesList = localitiesStr ? JSON.parse(localitiesStr) : [];
-
-      // 5. Mapear IDs a nombres
-      const companyName =
-        companiesList.find((comp: any) => comp.id === formData.empresaId)?.nombre || 'N/A';
-      const localityName =
-        localitiesList.find((loc: any) => loc.id === formData.selectedLocalityId)?.nombre || 'N/A';
-      const viaOrigenName =
-        formData.fromTrack !== null && formData.fromTrack !== undefined
-          ? `Vía ${formData.fromTrack}`
-          : 'N/A';
-      const viaDestinoName =
-        formData.toTrack !== null && formData.toTrack !== undefined
-          ? `Vía ${formData.toTrack}`
-          : 'N/A';
-
-      // 6. Construir el payload
+      setIsSubmitting(true);
+  
+      const [userStr, token] = await Promise.all([
+        AsyncStorage.getItem('user'),
+        AsyncStorage.getItem('token'),
+      ]);
+      if (!userStr || !token) throw new Error('Falta token o sesión de usuario');
+  
+      const user = JSON.parse(userStr);
+  
+      // --- Construimos el payload limpio ---
       const payload = {
-        codigo: formData.locomotiveNumber,
-        empresaId: formData.empresaId,
-        creadoPorId: formData.creadoPorId || (userSegment as any).creadoPorId,
-        clienteId: formData.clienteId || (userSegment as any).clienteId,
-        localidadId: formData.selectedLocalityId,
-        viaOrigenId: Number(formData.fromTrack) || null,
-        viaDestinoId: Number(formData.toTrack) || null,
+        empresaId: formData.empresaId ?? 1,                      // default 1
+        creadoPorId: formData.creadoPorId ?? user.id,
+        clienteId: formData.clienteId ?? user.id,
+        locomotiveNumber: formData.locomotiveNumber??1,
+        localidadId: formData.selectedLocalityId ?? 1,
+        viaOrigenId: formData.fromTrack !== null ? Number(formData.fromTrack) : 1,
+        viaDestinoId: formData.toTrack !== null ? Number(formData.toTrack) : 2,
         lavado: formData.service === 'Lavado',
         torno: formData.service === 'Torno',
         prioridad: formData.priority ? 'ALTA' : 'BAJA',
-        tipoMovimiento: formData.movementType,
+        tipoMovimiento: formData.movementType ?? 'REMOLCADA',
         estado: 'SOLICITADO',
-        fechaInicio: formData.fechaInicio,
-        fechaFin: '',
-        instrucciones: formData.comments,
+        fechaInicio: formData.fechaInicio ?? new Date().toISOString(),
+        instrucciones: formData.comments ?? '',
+        posicionCabina: formData.cabinPosition ?? 'DENTRO',       // <-- default DENTRO
+        posicionChimenea: formData.chimneyPosition ?? 'DENTRO',   // <-- default DENTRO
+        direccionEmpuje: formData.pushPull ?? 'EMPUJAR',          // <-- default EMPUJAR
+        finalizado: false,
+        incidenteGlobal: false,
+        fechaSolicitud: new Date().toISOString(),
+        fechaPausa: null,
+        fechaFin: null,
       };
-
-      // 7. Mensaje amigable
-      const confirmationMessage = [
-        `Código de locomotora: ${payload.codigo}`,
-        `Empresa: ${companyName}`,
-        `Localidad: ${localityName}`,
-        `Vía Origen: ${viaOrigenName}`,
-        `Vía Destino: ${viaDestinoName}`,
-        `Servicio: ${formData.service || 'Ninguno'}`,
-        `Prioridad: ${formData.priority ? 'ALTA' : 'BAJA'}`,
-        `Tipo de movimiento: ${payload.tipoMovimiento}`,
-        `Estado: ${payload.estado}`,
-        `Fecha Inicio: ${payload.fechaInicio}`,
-        `Instrucciones: ${payload.instrucciones || 'Ninguna'}`,
-      ].join('\n');
-
-      const confirmAlertMessage = `¿Estás seguro de que deseas confirmar la solicitud?\n\n${confirmationMessage}`;
-
+  
+      console.log('🚀 Payload que se enviará:', JSON.stringify(payload, null, 2));
+  
+      const res = await fetch(`${API_URL}/movimientos`, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+  
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(`Error ${res.status}: ${txt}`);
+      }
+  
+      await res.json();
       Alert.alert(
-        '🔔 Confirmación',
-        confirmAlertMessage,
-        [
-          { text: 'No', style: 'cancel' },
-          {
-            text: 'Sí',
-            onPress: () => {
-              console.log('Payload final:', JSON.stringify(payload, null, 2));
-              Alert.alert(
-                '✅ Realizado',
-                `El movimiento ha sido confirmado.\n\n${confirmationMessage}`,
-                [{ text: 'OK', onPress: () => onFinish() }],
-                { cancelable: false }
-              );
-            },
-          },
-        ],
-        { cancelable: false }
+        '✅ Movimiento creado',
+        'Tu movimiento ha sido registrado correctamente.',
+        [{ text: 'OK', onPress: onFinish }],
+        { cancelable: false },
       );
-    } catch (error) {
-      console.log(error);
-      Alert.alert('Error', 'No se pudieron recuperar los datos.');
+    } catch (err: any) {
+      const msg =
+        err instanceof TypeError
+          ? 'No se pudo contactar al servidor. Revisa tu conexión.'
+          : err.message || 'Error desconocido';
+      Alert.alert('Error', msg);
+    } finally {
+      setIsSubmitting(false);
     }
-  };
+  }, [formData, onFinish]);
+  
 
+  /* ---------- UI ---------- */
   return (
     <View style={{ marginTop: 10 }}>
-      <View style={styles.rowButtons}>{/* Otros elementos si se requieren */}</View>
-
       <Text style={styles.label}>Instrucciones y/o comentarios:</Text>
       <TextInput
         style={[
@@ -150,19 +137,44 @@ const StepThree: React.FC<StepThreeProps> = ({ formData, setFormData, onFinish }
           { height: 100, textAlignVertical: 'top', paddingTop: 10 },
         ]}
         multiline
-        placeholder="Escribe comentarios o instrucciones adicionales..."
+        placeholder="Escribe comentarios o instrucciones adicionales…"
         value={formData.comments}
         onChangeText={(text) => setFormData({ ...formData, comments: text })}
+        editable={!isSubmitting}
       />
 
       <TouchableOpacity
-        style={[styles.confirmButton, dynamicStyles.confirmButton]}
+        style={[styles.confirmButton, dynamicStyles.confirmButton, isSubmitting && { opacity: 0.6 }]}
         onPress={handleConfirm}
+        disabled={isSubmitting}
       >
         <Text style={styles.confirmButtonText}>Confirmar solicitud</Text>
       </TouchableOpacity>
+
+      {/* Overlay de espera */}
+      {isSubmitting && (
+        <View style={local.overlay}>
+          <ActivityIndicator size="large" color="#12AB35" />
+          <Text style={local.loadingText}>Enviando movimiento al servidor…</Text>
+        </View>
+      )}
     </View>
   );
 };
+
+/* ---------- estilos internos ---------- */
+const local = StyleSheet.create({
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255,255,255,0.8)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    marginTop: 15,
+    fontSize: 16,
+    color: '#333',
+  },
+});
 
 export default StepThree;

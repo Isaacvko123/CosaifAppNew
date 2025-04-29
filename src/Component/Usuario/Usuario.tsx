@@ -21,9 +21,9 @@ import { styles } from './UsuarioStyles';
 import { formStylesPorRol, rolFormMap } from './FormStyles';
 
 import type { StackNavigationProp } from '@react-navigation/stack';
-import type { RootStackParamList } from '../../navigation/Navigation'; // Asegúrate de importar desde donde tengas ese archivo
+import RootStackParamList from '../../navigation/Navigation'; // Asegúrate de importar desde donde tengas ese archivo
 
-type NavigationProp = StackNavigationProp<RootStackParamList, 'Usuario'>;
+type NavigationProp = StackNavigationProp<typeof RootStackParamList, 'Usuario'>;
 
 interface UserData {
   id: number;
@@ -77,7 +77,6 @@ const Usuario: React.FC = () => {
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       };
-
       const response = await fetch('http://192.168.101.20:3000/usuarios', { headers });
       const raw = await response.text();
       const data = JSON.parse(raw);

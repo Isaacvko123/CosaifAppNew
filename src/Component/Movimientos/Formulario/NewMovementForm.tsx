@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   ScrollView,
   View,
@@ -22,7 +22,7 @@ export interface Track {
 
 export interface MovementFormData {
   empresaId: number | null;
-  locomotiveNumber: string;
+  locomotiveNumber: number;
   priority: boolean;
   fromTrack: number | null;
   toTrack: number | null;
@@ -37,6 +37,8 @@ export interface MovementFormData {
   clienteId: number | null;
   fechaInicio: string;
   fechaFin: string;
+  posicionChimenea?: 'DENTRO' | 'AFUERA' | null;
+  direccionEmpuje?: 'EMPUJAR' | 'JALAR' | 'Sin_Solicitar';
 }
 
 interface NewMovementFormProps {
@@ -45,13 +47,13 @@ interface NewMovementFormProps {
 
 const initialFormState: MovementFormData = {
   empresaId: null,
-  locomotiveNumber: '',
+  locomotiveNumber: 0,
   priority: false,
   fromTrack: null,
   toTrack: null,
   selectedLocalityId: undefined,
-  cabinPosition: '',
-  chimneyPosition: '',
+  cabinPosition: 'Sin_Solicitar',
+  chimneyPosition: 'Sin_Solicitar',
   pushPull: '',
   movementType: '',
   comments: '',
@@ -60,12 +62,20 @@ const initialFormState: MovementFormData = {
   clienteId: null,
   fechaInicio: new Date().toISOString(),
   fechaFin: new Date().toISOString(),
+  posicionChimenea: null,
+  direccionEmpuje: "Sin_Solicitar",
 };
+
+const STEP_CONFIG = [
+  { label: 'Paso 1 de 3', percent: 33 },
+  { label: 'Paso 2 de 3', percent: 66 },
+  { label: 'Paso 3 de 3', percent: 100 },
+];
 
 const NewMovementForm: React.FC<NewMovementFormProps> = ({ onFinish }) => {
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState<MovementFormData>(initialFormState);
-  const [errors, setErrors] = useState({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
 
   const [predefinedTracks, setPredefinedTracks] = useState<Track[]>([]);
@@ -127,8 +137,10 @@ const NewMovementForm: React.FC<NewMovementFormProps> = ({ onFinish }) => {
   }, [fetchUserAndDefaults, fetchData]);
 
   const validateStep1 = () => {
-    const errs: any = {};
-    if (!formData.locomotiveNumber.trim()) errs.locomotiveNumber = 'Número requerido.';
+    const errs: Record<string, string> = {};
+    if (!formData.locomotiveNumber || isNaN(formData.locomotiveNumber)) {
+      errs.locomotiveNumber = 'Número requerido.';
+    }
     if (!formData.fromTrack) errs.fromTrack = 'Selecciona vía de origen.';
     if (!formData.service && !formData.toTrack) errs.toTrack = 'Selecciona vía de destino.';
     setErrors(errs);
@@ -141,7 +153,11 @@ const NewMovementForm: React.FC<NewMovementFormProps> = ({ onFinish }) => {
   };
 
   const prevStep = () => setCurrentStep((prev) => Math.max(prev - 1, 1));
-  const progressPercentage = (currentStep / 3) * 100;
+
+  const { label: stepLabel, percent } = useMemo(
+    () => STEP_CONFIG[currentStep - 1],
+    [currentStep]
+  );
 
   const renderStep = () => {
     switch (currentStep) {
@@ -182,21 +198,21 @@ const NewMovementForm: React.FC<NewMovementFormProps> = ({ onFinish }) => {
 
   return (
     <ScrollView contentContainerStyle={formStylesBase.scrollContainer}>
-      {/* Progress bar */}
+      <Text style={formStylesBase.title}>Nuevo Movimiento ({stepLabel})</Text>
       <View style={formStylesBase.progressBarContainer}>
-        <View style={[formStylesBase.progressBarFill, { width: `${progressPercentage}%` }]} />
+        <View
+          style={[
+            formStylesBase.progressBarFill,
+            { width: `${percent}%`, backgroundColor: '#12AB35' },
+          ]}
+        />
       </View>
-      <Text style={{ textAlign: 'right', marginTop: 4, marginBottom: 8, fontSize: 12, color: '#666' }}>
-        {progressPercentage.toFixed(0)}%
+      <Text
+        style={{ textAlign: 'right', marginTop: 4, marginBottom: 8, fontSize: 12, color: '#666' }}
+      >
+        {percent}%
       </Text>
-
-      {/* Title */}
-      <Text style={formStylesBase.title}>Nuevo Movimiento (Paso {currentStep} de 3)</Text>
-
-      {/* Step */}
       {renderStep()}
-
-      {/* Navigation */}
       <View style={formStylesBase.navigationContainer}>
         {currentStep > 1 && (
           <TouchableOpacity style={formStylesBase.navButton} onPress={prevStep}>

@@ -54,8 +54,11 @@ const CrearNuevoUsuario: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
-  const [rol, setRol] = useState('CLIENTE');
+  // Reordered: company first, then role
   const [empresaId, setEmpresaId] = useState('');
+  const [rol, setRol] = useState('CLIENTE');
+  const [rolesOptions, setRolesOptions] = useState<string[]>(['CLIENTE']);
+
   const [localidadId, setLocalidadId] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -70,6 +73,20 @@ const CrearNuevoUsuario: React.FC = () => {
   const animatedContainerStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
 
   const updateProgress = (val: number) => setProgress((p) => Math.min(p + val, 100));
+
+  // Adjust available roles when company changes
+  useEffect(() => {
+    const selected = empresas.find(e => e.id.toString() === empresaId)?.nombre || '';
+    const lower = selected.toLowerCase();
+    if (lower === 'vianko' || lower === 'cosaif') {
+      const opts = ['SUPERVISOR', 'COORDINADOR', 'OPERADOR', 'MAQUINISTA', 'ADMINISTRADOR'];
+      setRolesOptions(opts);
+      if (!opts.includes(rol)) setRol(opts[0]);
+    } else {
+      setRolesOptions(['CLIENTE']);
+      setRol('CLIENTE');
+    }
+  }, [empresaId, empresas]);
 
   useEffect(() => {
     const fetchInitialData = async () => {
@@ -101,8 +118,7 @@ const CrearNuevoUsuario: React.FC = () => {
         updateProgress(30);
         const userStr = await AsyncStorage.getItem('user');
         if (userStr) {
-          const user: UserData = JSON.parse(userStr);
-          setCurrentUser(user);
+          setCurrentUser(JSON.parse(userStr));
         }
 
         updateProgress(100);
@@ -133,7 +149,7 @@ const CrearNuevoUsuario: React.FC = () => {
       setError('Las contraseñas no coinciden.');
       return;
     }
-    if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
       setError('Formato de correo inválido.');
       return;
     }
@@ -184,11 +200,11 @@ const CrearNuevoUsuario: React.FC = () => {
           <View style={{ marginTop: 20 }}>
             <Text style={styles.errorText}>{error}</Text>
             <TouchableOpacity
-  style={[styles.button, { backgroundColor: dynamicStyles.confirmButton.backgroundColor }]}
-  onPress={() => navigation.goBack()}
->
-  <Text style={styles.buttonText }>Cancelar</Text>
-</TouchableOpacity>
+              style={[styles.button, { backgroundColor: dynamicStyles.confirmButton.backgroundColor }]}
+              onPress={() => navigation.goBack()}
+            >
+              <Text style={styles.buttonText}>Cancelar</Text>
+            </TouchableOpacity>
           </View>
         )}
       </View>
@@ -204,10 +220,9 @@ const CrearNuevoUsuario: React.FC = () => {
       <Animated.View style={[{ width: '100%' }, animatedContainerStyle]}>
         <ScrollView contentContainerStyle={styles.scrollContainer}>
           <View style={styles.formContainer}>
-            <Text style={[styles.title, { color: dynamicStyles.title.color }]}>
-              Crear Nuevo Usuario
-            </Text>
+            <Text style={[styles.title, { color: dynamicStyles.title.color }]}>Crear Nuevo Usuario</Text>
 
+            {/* Campos de entrada estándar */}
             <View style={styles.inputContainer}>
               <FontAwesome5 name="user" size={18} color="#888" style={styles.icon} />
               <TextInput
@@ -265,15 +280,7 @@ const CrearNuevoUsuario: React.FC = () => {
               Seguridad de la contraseña: {passwordStrength}%
             </Text>
 
-            <View style={styles.inputContainer}>
-              <FontAwesome5 name="user-tag" size={18} color="#888" style={styles.icon} />
-              <Picker selectedValue={rol} style={styles.picker} onValueChange={setRol}>
-                {['CLIENTE', 'SUPERVISOR', 'COORDINADOR', 'OPERADOR', 'MAQUINISTA', 'ADMINISTRADOR'].map((r) => (
-                  <Picker.Item key={r} label={r} value={r} />
-                ))}
-              </Picker>
-            </View>
-
+            {/* Picker: Empresa primero */}
             <View style={styles.inputContainer}>
               <FontAwesome5 name="building" size={18} color="#888" style={styles.icon} />
               <Picker selectedValue={empresaId} style={styles.picker} onValueChange={setEmpresaId}>
@@ -283,6 +290,17 @@ const CrearNuevoUsuario: React.FC = () => {
               </Picker>
             </View>
 
+            {/* Picker dinámico de Rol */}
+            <View style={styles.inputContainer}>
+              <FontAwesome5 name="user-tag" size={18} color="#888" style={styles.icon} />
+              <Picker selectedValue={rol} style={styles.picker} onValueChange={setRol}>
+                {rolesOptions.map(r => (
+                  <Picker.Item key={r} label={r} value={r} />
+                ))}
+              </Picker>
+            </View>
+
+            {/* Picker: Localidad */}
             <View style={styles.inputContainer}>
               <FontAwesome5 name="map-marker-alt" size={18} color="#888" style={styles.icon} />
               <Picker selectedValue={localidadId} style={styles.picker} onValueChange={setLocalidadId}>

@@ -1,10 +1,10 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { View, Text, Switch, TouchableOpacity, Image, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, Image, ScrollView } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { formStylesBase, formStylesPorRol, rolFormMap } from './formStyles';
 import { MovementFormData } from './NewMovementForm';
-import { MovementImages } from '../../../constants/imagenes'; // Usando alias limpio
+import { MovementImages } from '../../../constants/imagenes';
 
 const DOUBLE_PRESS_DELAY = 100;
 
@@ -39,18 +39,46 @@ const StepTwo: React.FC<StepTwoProps> = ({ formData, setFormData }) => {
   const handleOptionPress = (field: keyof MovementFormData, value: string) => {
     const now = Date.now();
     const key = `${field}-${value}`;
-    if (lastTapTimes.current[key] && now - lastTapTimes.current[key] < DOUBLE_PRESS_DELAY) {
-      setFormData({ ...formData, [field]: '' });
-    } else {
-      let finalValue = value;
-      if (field === 'movementType') {
-        finalValue = value === 'MD Trabajando' ? 'MD_TRABAJANDO' : 'REMOLCADA';
-      } else if (field === 'cabinPosition' || field === 'chimneyPosition' || field === 'pushPull') {
-        finalValue = value.toUpperCase();
-      }
-      setFormData({ ...formData, [field]: finalValue });
-    }
+
+    const isDoublePress = lastTapTimes.current[key] && now - lastTapTimes.current[key] < DOUBLE_PRESS_DELAY;
     lastTapTimes.current[key] = now;
+
+    if (isDoublePress) {
+      setFormData(prev => ({ ...prev, [field]: '' }));
+      return;
+    }
+
+    let finalValue = value;
+
+    if (field === 'movementType') {
+      finalValue = value === 'MD Trabajando' ? 'MD_TRABAJANDO' : 'REMOLCADA';
+    }
+
+    if (field === 'cabinPosition') {
+      finalValue = value.toUpperCase() === 'DENTRO' ? 'DENTRO' : 'AFUERA';
+    } else if (field === 'chimneyPosition') {
+      finalValue = value.toUpperCase() === 'DENTRO' ? 'DENTRO' : 'AFUERA';
+    } else if (field === 'pushPull') {
+      finalValue = value.toUpperCase() === 'EMPUJAR' ? 'EMPUJAR' : 'JALAR';
+    }
+    
+    setFormData(prev => {
+      const updatedData: Partial<MovementFormData> = {
+        ...prev,
+        [field]: finalValue,
+      };
+    
+      if (field === 'chimneyPosition' && (finalValue === 'DENTRO' || finalValue === 'AFUERA')) {
+        updatedData.posicionChimenea = finalValue as 'DENTRO' | 'AFUERA';
+      }
+    
+      if (field === 'pushPull' && (finalValue === 'EMPUJAR' || finalValue === 'JALAR')) {
+        updatedData.direccionEmpuje = finalValue as 'EMPUJAR' | 'JALAR';
+      }
+    
+      return updatedData as MovementFormData;
+    });
+    
   };
 
   const finalImage = (() => {
@@ -72,7 +100,9 @@ const StepTwo: React.FC<StepTwoProps> = ({ formData, setFormData }) => {
 
   const cabinPositionError = !formData.cabinPosition ? 'Debes seleccionar la posición de cabina.' : '';
   const chimneyPositionError = !formData.chimneyPosition ? 'Debes seleccionar la posición de chimenea.' : '';
-  const pushPullError = !formData.pushPull ? 'Debes seleccionar EMPUJAR o JALAR.' : '';
+  const pushPullError = formData.movementType === 'REMOLCADA' && !formData.direccionEmpuje
+    ? 'Debes seleccionar EMPUJAR o JALAR.'
+    : '';
   const movementTypeError = !formData.movementType ? 'Debes seleccionar el tipo de movimiento.' : '';
 
   return (
@@ -96,26 +126,26 @@ const StepTwo: React.FC<StepTwoProps> = ({ formData, setFormData }) => {
             </TouchableOpacity>
           </View>
           {formData.movementType === 'REMOLCADA' && (
-            <View>
+            <>
               <Text style={styles.label}>Empujar / Jalar:</Text>
-              {formData.pushPull && (
+              {formData.direccionEmpuje && (
                 <View style={styles.imageContainer}>
                   <Image source={renderPushPullImage()!} style={styles.image} />
                 </View>
               )}
               {pushPullError && <Text style={styles.errorText}>{pushPullError}</Text>}
               <View style={styles.rowButtons}>
-                {['EMPUJAR', 'JALAR'].map((op) => (
+                {['EMPUJAR', 'JALAR'].map(op => (
                   <TouchableOpacity
                     key={op}
-                    style={[styles.optionButton, formData.pushPull === op && styles.optionButtonSelected]}
+                    style={[styles.optionButton, formData.direccionEmpuje === op && styles.optionButtonSelected]}
                     onPress={() => handleOptionPress('pushPull', op)}
                   >
                     <Text style={styles.optionButtonText}>{op}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
-            </View>
+            </>
           )}
         </>
       ) : (
@@ -128,7 +158,7 @@ const StepTwo: React.FC<StepTwoProps> = ({ formData, setFormData }) => {
           <Text style={styles.label}>Posición de cabina:</Text>
           {cabinPositionError && <Text style={styles.errorText}>{cabinPositionError}</Text>}
           <View style={styles.rowButtons}>
-            {['DENTRO', 'AFUERA'].map((pos) => (
+            {['DENTRO', 'AFUERA'].map(pos => (
               <TouchableOpacity
                 key={pos}
                 style={[styles.optionButton, formData.cabinPosition === pos && styles.optionButtonSelected]}
@@ -138,10 +168,11 @@ const StepTwo: React.FC<StepTwoProps> = ({ formData, setFormData }) => {
               </TouchableOpacity>
             ))}
           </View>
+
           <Text style={styles.label}>Posición de chimenea:</Text>
           {chimneyPositionError && <Text style={styles.errorText}>{chimneyPositionError}</Text>}
           <View style={styles.rowButtons}>
-            {['DENTRO', 'AFUERA'].map((pos) => (
+            {['DENTRO', 'AFUERA'].map(pos => (
               <TouchableOpacity
                 key={pos}
                 style={[styles.optionButton, formData.chimneyPosition === pos && styles.optionButtonSelected]}
@@ -151,6 +182,7 @@ const StepTwo: React.FC<StepTwoProps> = ({ formData, setFormData }) => {
               </TouchableOpacity>
             ))}
           </View>
+
           <Text style={styles.label}>Tipo de movimiento:</Text>
           {movementTypeError && <Text style={styles.errorText}>{movementTypeError}</Text>}
           <View style={styles.rowButtons}>
@@ -167,27 +199,28 @@ const StepTwo: React.FC<StepTwoProps> = ({ formData, setFormData }) => {
               <Text style={styles.optionButtonText}>Remolcada</Text>
             </TouchableOpacity>
           </View>
+
           {formData.movementType === 'REMOLCADA' && (
-            <View>
+            <>
               <Text style={styles.label}>Empujar / Jalar:</Text>
-              {formData.pushPull && (
+              {formData.direccionEmpuje && (
                 <View style={styles.imageContainer}>
                   <Image source={renderPushPullImage()!} style={styles.image} />
                 </View>
               )}
               {pushPullError && <Text style={styles.errorText}>{pushPullError}</Text>}
               <View style={styles.rowButtons}>
-                {['EMPUJAR', 'JALAR'].map((op) => (
+                {['EMPUJAR', 'JALAR'].map(op => (
                   <TouchableOpacity
                     key={op}
-                    style={[styles.optionButton, formData.pushPull === op && styles.optionButtonSelected]}
+                    style={[styles.optionButton, formData.direccionEmpuje === op && styles.optionButtonSelected]}
                     onPress={() => handleOptionPress('pushPull', op)}
                   >
                     <Text style={styles.optionButtonText}>{op}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
-            </View>
+            </>
           )}
         </>
       )}
