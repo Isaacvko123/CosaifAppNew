@@ -153,7 +153,6 @@ const Maquinista: React.FC<MaquinistaProps> = ({ navigation }) => {
     }
   
     try {
-      // 🧠 Verifica el contenido de AsyncStorage
       const userStr = await AsyncStorage.getItem('user');
       const token = await AsyncStorage.getItem('token');
       
