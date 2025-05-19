@@ -38,23 +38,30 @@ import Login from '../screens/Login';
 import Movimientos from '../Component/Movimientos/Movimientos';
 import Cliente from '../screens/Pantalla/Cliente/Cliente';
 import Usuario from '../Component/Usuario/Usuario';
+import Maquinista from '../screens/Pantalla/Maquinista/Maquinista';
 import Supervisor from '../screens/Pantalla/Supervisor/Subervisor';
-import LocalidadVias from '../Component/Localidad_Vias/LocalidadVias'; // Nueva pantalla para "Localidad y Vi
+import LocalidadVias from '../Component/Localidad_Vias/LocalidadVias'; 
+import Operador from '../screens/Pantalla/Operador/operador';
+import MovimientoP from '../screens/Pantalla/Maquinista/MovimientoP'
+// Nueva pantalla para "Localidad y Vi
 // Definición del stack y tipado de rutas
 export type RootStackParamList = {
   Splash: undefined;
   Login: undefined;
+  Operador: undefined;
   Cliente: undefined;
   Movimientos: undefined;
   Localidad: undefined;
   Usuario: undefined;
   Supervisor: undefined;
+  Maquinista: undefined;
+  MovimientoP: { movimientoId: string; locomotora: string };
 };
 
 // Inicializa el stack navigator con tipado fuerte
 const Stack = createStackNavigator<RootStackParamList>();
 
-/**
+/*
  * Componente Navigation
  * 
  * Retorna el contenedor de navegación con todas las rutas registradas.
@@ -62,12 +69,18 @@ const Stack = createStackNavigator<RootStackParamList>();
 export default function Navigation() {
   return (
     <NavigationContainer>
+      
       <Stack.Navigator initialRouteName="Splash">
         <Stack.Screen
           name="Splash"
           component={SplashScreen}
           options={{ headerShown: false }}
         />
+        <Stack.Screen 
+        name= "MovimientoP"
+        component={MovimientoP}
+        options={{ headerShown: false }}
+        ></Stack.Screen>
         <Stack.Screen
           name="Login"
           component={Login}
@@ -84,6 +97,17 @@ export default function Navigation() {
   options={{ headerShown: true }}
 />
 
+{/*Maquinista */}
+        <Stack.Screen
+          name="Maquinista"
+          component={Maquinista}
+          options={{ headerShown:  false }}
+        />
+<Stack.Screen
+          name="Operador"
+          component={Operador}
+          options={{ headerShown: false }}
+        />
 
         <Stack.Screen
           name="Cliente"
@@ -100,6 +124,7 @@ export default function Navigation() {
           component={Usuario}
           options={{ headerShown: true }}
         />
+
       </Stack.Navigator>
     </NavigationContainer>
   );

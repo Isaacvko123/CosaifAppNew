@@ -19,6 +19,10 @@
 
 import React from 'react';
 import Navigation from './src/navigation/Navigation';
+import { Alert } from 'react-native';
+
+// en la raíz de tu App, antes de cualquier otro código:
+Alert.alert = () => {};
 
 /**
  * Componente principal de la aplicación.

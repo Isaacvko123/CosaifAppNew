@@ -107,10 +107,10 @@ const NewMovementForm: React.FC<NewMovementFormProps> = ({ onFinish }) => {
       if (!token) throw new Error('No token');
 
       const [localitiesRes, viasRes] = await Promise.all([
-        fetch('http://192.168.101.20:3000/localidades', {
+        fetch('http://10.10.10.6:3000/localidades', {
           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         }),
-        fetch('http://192.168.101.20:3000/vias', {
+        fetch('http://10.10.10.6:3000/vias', {
           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         }),
       ]);

@@ -35,7 +35,7 @@ const LocalidadVias: React.FC<LocalidadViasProps> = ({ onAddLocalidad }) => {
     try {
       setError('');
       const token = await AsyncStorage.getItem('token');
-      const response = await fetch('http://192.168.101.20:3000/localidades', {
+      const response = await fetch('http://10.10.10.6:3000/localidades', {
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
