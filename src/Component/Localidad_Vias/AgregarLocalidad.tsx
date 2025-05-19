@@ -29,8 +29,8 @@ const AgregarLocalidad: React.FC<AgregarLocalidadProps> = ({ onFinish }) => {
     setIsLoading(true);
 
     try {
-      const token = await AsyncStorage.getItem('token');
-      const response = await fetch('http://192.168.101.20:3000/localidades', {
+      const token = await AsyncStorage.getItem('token')
+      const response = await fetch('http://10.10.10.6:3000/localidades', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

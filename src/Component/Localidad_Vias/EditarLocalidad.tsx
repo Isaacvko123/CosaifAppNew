@@ -33,7 +33,7 @@ const EditarLocalidad: React.FC<EditarLocalidadProps> = ({ localidadId, onFinish
   const fetchLocalidadDetalle = async () => {
     try {
       const token = await AsyncStorage.getItem('token');
-      const res = await fetch(`http://192.168.101.20:3000/localidades/${localidadId}`, {
+      const res = await fetch(`http://10.10.10.6:3000/localidades/${localidadId}`, {
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
@@ -50,7 +50,7 @@ const EditarLocalidad: React.FC<EditarLocalidadProps> = ({ localidadId, onFinish
   const fetchVias = async () => {
     try {
       const token = await AsyncStorage.getItem('token');
-      const res = await fetch(`http://192.168.101.20:3000/vias/localidad/${localidadId}`, {
+      const res = await fetch(`http://10.10.10.6:3000/vias/localidad/${localidadId}`, {
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,

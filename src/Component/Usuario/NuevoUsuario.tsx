@@ -21,8 +21,12 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { styles } from './CrearNuevoUsuarioStyles';
+// Importamos los estilos mejorados y el tema
+import { styles, theme } from './CrearNuevoUsuarioStyles';
 import { formStylesPorRol, rolFormMap } from './FormStyles';
+
+// Destructuramos el tema para fácil acceso
+const { COLORS, SPACING } = theme;
 
 interface UserData {
   id: number;
@@ -44,9 +48,122 @@ const getPasswordStrength = (password: string): number => {
   return Math.min(score, 100);
 };
 
+// Componente para indicador de fortaleza de contraseña
+const PasswordStrengthIndicator: React.FC<{ strength: number }> = ({ strength }) => {
+  // Determinar color basado en la fortaleza
+  const getColor = () => {
+    if (strength < 40) return '#E63946'; // Rojo
+    if (strength < 70) return '#FFA62B'; // Amarillo
+    return '#2D6A4F';                     // Verde fuerte
+  };
+
+  return (
+    <View style={{ marginBottom: SPACING.md }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: SPACING.xs }}>
+        <Text style={{ color: COLORS.text.secondary, fontSize: theme.FONT_SIZE.sm }}>
+          Seguridad de la contraseña
+        </Text>
+        <Text style={{ color: getColor(), fontWeight: String(theme.FONT_WEIGHT.semibold) as any }}>
+          {strength}%
+        </Text>
+      </View>
+      <View style={{ height: 4, backgroundColor: '#E9ECF2', borderRadius: 2 }}>
+        <View 
+          style={{
+            height: 4,
+            width: `${strength}%`,
+            backgroundColor: getColor(),
+            borderRadius: 2
+          }}
+        />
+      </View>
+    </View>
+  );
+};
+
+// Componente Input reutilizable
+const FormInput: React.FC<{
+  icon: string;
+  placeholder: string;
+  value: string;
+  onChangeText: (text: string) => void;
+  secureTextEntry?: boolean;
+  keyboardType?: 'default' | 'email-address' | 'numeric';
+  rightIcon?: React.ReactNode;
+}> = ({ 
+  icon, 
+  placeholder, 
+  value, 
+  onChangeText, 
+  secureTextEntry = false, 
+  keyboardType = 'default',
+  rightIcon
+}) => {
+  return (
+    <View style={styles.inputContainer}>
+      <FontAwesome5 name={icon} size={18} color={COLORS.text.secondary} style={styles.icon} />
+      <TextInput
+        style={styles.input}
+        placeholder={placeholder}
+        placeholderTextColor={COLORS.text.secondary}
+        value={value}
+        onChangeText={onChangeText}
+        secureTextEntry={secureTextEntry}
+        keyboardType={keyboardType}
+      />
+      {rightIcon}
+    </View>
+  );
+};
+
+// Componente PickerSelect reutilizable
+const FormPicker: React.FC<{
+  icon: string;
+  selectedValue: string;
+  onValueChange: (value: string) => void;
+  items: { label: string; value: string }[];
+}> = ({ icon, selectedValue, onValueChange, items }) => {
+  return (
+    <View style={styles.inputContainer}>
+      <FontAwesome5 name={icon} size={18} color={COLORS.text.secondary} style={styles.icon} />
+      <Picker
+        selectedValue={selectedValue}
+        style={styles.picker}
+        onValueChange={onValueChange}
+      >
+        {items.map((item) => (
+          <Picker.Item key={item.value} label={item.label} value={item.value} />
+        ))}
+      </Picker>
+    </View>
+  );
+};
+
+// Componente Button reutilizable
+const FormButton: React.FC<{
+  title: string;
+  onPress: () => void;
+  secondary?: boolean;
+  style?: object;
+}> = ({ title, onPress, secondary = false, style = {} }) => {
+  return (
+    <TouchableOpacity
+      style={[
+        styles.button,
+        secondary && { backgroundColor: COLORS.primaryLight },
+        style
+      ]}
+      onPress={onPress}
+    >
+      <Text style={styles.buttonText}>{title}</Text>
+    </TouchableOpacity>
+  );
+};
+
 const CrearNuevoUsuario: React.FC = () => {
   const navigation = useNavigation();
 
+  // Estados
   const [usuario, setUsuario] = useState('');
   const [email, setEmail] = useState('');
   const [contrasena, setContrasena] = useState('');
@@ -54,7 +171,6 @@ const CrearNuevoUsuario: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
-  // Reordered: company first, then role
   const [empresaId, setEmpresaId] = useState('');
   const [rol, setRol] = useState('CLIENTE');
   const [rolesOptions, setRolesOptions] = useState<string[]>(['CLIENTE']);
@@ -69,12 +185,13 @@ const CrearNuevoUsuario: React.FC = () => {
   const [localidades, setLocalidades] = useState<{ id: number; nombre: string }[]>([]);
   const [currentUser, setCurrentUser] = useState<UserData | null>(null);
 
+  // Animaciones
   const opacity = useSharedValue(0);
   const animatedContainerStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
 
   const updateProgress = (val: number) => setProgress((p) => Math.min(p + val, 100));
 
-  // Adjust available roles when company changes
+  // Efecto para ajustar roles disponibles cuando cambia la empresa
   useEffect(() => {
     const selected = empresas.find(e => e.id.toString() === empresaId)?.nombre || '';
     const lower = selected.toLowerCase();
@@ -88,45 +205,44 @@ const CrearNuevoUsuario: React.FC = () => {
     }
   }, [empresaId, empresas]);
 
+  // Efecto para cargar datos iniciales
   useEffect(() => {
     const fetchInitialData = async () => {
       try {
         updateProgress(10);
         const token = await AsyncStorage.getItem('token');
+        const headers = {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        };
 
-        const empresasRes = await fetch('http://192.168.101.20:3000/empresas', {
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-        });
+        // Fetch empresas
+        const empresasRes = await fetch('http://10.10.10.6:3000/empresas', { headers });
         const empresasData = await empresasRes.json();
         setEmpresas(empresasData);
         setEmpresaId(empresasData[0]?.id.toString() || '');
-
         updateProgress(40);
-        const localidadesRes = await fetch('http://192.168.101.20:3000/localidades', {
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-        });
+
+        // Fetch localidades
+        const localidadesRes = await fetch('http://10.10.10.6:3000/localidades', { headers });
         const localidadesData = await localidadesRes.json();
         setLocalidades(localidadesData);
         setLocalidadId(localidadesData[0]?.id.toString() || '');
-
         updateProgress(30);
+
+        // Obtener usuario actual
         const userStr = await AsyncStorage.getItem('user');
         if (userStr) {
           setCurrentUser(JSON.parse(userStr));
         }
 
+        // Animar entrada
         updateProgress(100);
         opacity.value = withTiming(1, { duration: 500 });
         setTimeout(() => setLoading(false), 500);
       } catch (err) {
         console.error('❌ Error al cargar datos:', err);
-        setError('Upps... No se pudo conectar con el servidor. Contacta a soporte.');
+        setError('No se pudo conectar con el servidor. Contacta a soporte.');
         setFatalError(true);
         setLoading(false);
       }
@@ -135,8 +251,11 @@ const CrearNuevoUsuario: React.FC = () => {
     fetchInitialData();
   }, []);
 
+  // Manejador para crear usuario
   const handleCrearUsuario = async () => {
     setError('');
+    
+    // Validaciones
     if (!usuario || !email || !contrasena || !confirmarContrasena || !rol || !empresaId || !localidadId) {
       setError('Completa todos los campos.');
       return;
@@ -156,7 +275,7 @@ const CrearNuevoUsuario: React.FC = () => {
 
     try {
       const token = await AsyncStorage.getItem('token');
-      const response = await fetch('http://192.168.101.20:3000/usuarios', {
+      const response = await fetch('http://10.10.10.6:3000/usuarios', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -182,35 +301,37 @@ const CrearNuevoUsuario: React.FC = () => {
       navigation.goBack();
     } catch (err) {
       console.error('Error creando usuario:', err);
-      setError('Ups... no se pudo registrar. Contacta con soporte.');
+      setError('Error de conexión. Contacta con soporte.');
     }
   };
 
+  // Obtener estilos dinámicos basados en el rol
   const roleKey = currentUser?.rol && rolFormMap[currentUser.rol] ? rolFormMap[currentUser.rol] : 'CLIENTE';
   const dynamicStyles = formStylesPorRol[roleKey];
   const passwordStrength = getPasswordStrength(contrasena);
 
+  // Renderizado de pantalla de carga o error
   if (loading || fatalError) {
     return (
       <View style={styles.splashContainer}>
-        <Image source={require('../../../assets/logo.png')} style={styles.logo} />
-        <ActivityIndicator size="large" color="#2D6A4F" style={{ marginTop: 30 }} />
+        <Image source={require('../../../assets/logo.png')} style={styles.logo as import('react-native').ImageStyle} />
+        <ActivityIndicator size="large" color={COLORS.primary} style={{ marginTop: SPACING.lg }} />
         <Text style={styles.loadingText}>Cargando: {progress.toFixed(0)}%</Text>
         {fatalError && (
-          <View style={{ marginTop: 20 }}>
+          <View style={{ marginTop: SPACING.lg }}>
             <Text style={styles.errorText}>{error}</Text>
-            <TouchableOpacity
-              style={[styles.button, { backgroundColor: dynamicStyles.confirmButton.backgroundColor }]}
+            <FormButton 
+              title="Volver" 
               onPress={() => navigation.goBack()}
-            >
-              <Text style={styles.buttonText}>Cancelar</Text>
-            </TouchableOpacity>
+              style={{ marginTop: SPACING.md }}
+            />
           </View>
         )}
       </View>
     );
   }
 
+  // Renderizado del formulario principal
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -220,108 +341,100 @@ const CrearNuevoUsuario: React.FC = () => {
       <Animated.View style={[{ width: '100%' }, animatedContainerStyle]}>
         <ScrollView contentContainerStyle={styles.scrollContainer}>
           <View style={styles.formContainer}>
-            <Text style={[styles.title, { color: dynamicStyles.title.color }]}>Crear Nuevo Usuario</Text>
-
-            {/* Campos de entrada estándar */}
-            <View style={styles.inputContainer}>
-              <FontAwesome5 name="user" size={18} color="#888" style={styles.icon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Nombre"
-                placeholderTextColor="#888"
-                value={usuario}
-                onChangeText={setUsuario}
-              />
-            </View>
-
-            <View style={styles.inputContainer}>
-              <FontAwesome5 name="envelope" size={18} color="#888" style={styles.icon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Correo electrónico"
-                placeholderTextColor="#888"
-                keyboardType="email-address"
-                value={email}
-                onChangeText={setEmail}
-              />
-            </View>
-
-            <View style={styles.inputContainer}>
-              <FontAwesome5 name="lock" size={18} color="#888" style={styles.icon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Contraseña"
-                placeholderTextColor="#888"
-                secureTextEntry={!showPassword}
-                value={contrasena}
-                onChangeText={setContrasena}
-              />
-              <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-                <FontAwesome5 name={showPassword ? 'eye' : 'eye-slash'} size={18} color="#888" />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.inputContainer}>
-              <FontAwesome5 name="lock" size={18} color="#888" style={styles.icon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Confirmar Contraseña"
-                placeholderTextColor="#888"
-                secureTextEntry={!showConfirm}
-                value={confirmarContrasena}
-                onChangeText={setConfirmarContrasena}
-              />
-              <TouchableOpacity onPress={() => setShowConfirm(!showConfirm)}>
-                <FontAwesome5 name={showConfirm ? 'eye' : 'eye-slash'} size={18} color="#888" />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={{ marginBottom: 10, color: dynamicStyles.title.color }}>
-              Seguridad de la contraseña: {passwordStrength}%
+            <Text style={[styles.title, { color: dynamicStyles.title.color }]}>
+              Crear Nuevo Usuario
             </Text>
 
-            {/* Picker: Empresa primero */}
-            <View style={styles.inputContainer}>
-              <FontAwesome5 name="building" size={18} color="#888" style={styles.icon} />
-              <Picker selectedValue={empresaId} style={styles.picker} onValueChange={setEmpresaId}>
-                {empresas.map((e) => (
-                  <Picker.Item key={e.id} label={e.nombre} value={e.id.toString()} />
-                ))}
-              </Picker>
-            </View>
+            {/* Inputs con componentes reutilizables */}
+            <FormInput
+              icon="user"
+              placeholder="Nombre"
+              value={usuario}
+              onChangeText={setUsuario}
+            />
 
-            {/* Picker dinámico de Rol */}
-            <View style={styles.inputContainer}>
-              <FontAwesome5 name="user-tag" size={18} color="#888" style={styles.icon} />
-              <Picker selectedValue={rol} style={styles.picker} onValueChange={setRol}>
-                {rolesOptions.map(r => (
-                  <Picker.Item key={r} label={r} value={r} />
-                ))}
-              </Picker>
-            </View>
+            <FormInput
+              icon="envelope"
+              placeholder="Correo electrónico"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+            />
 
-            {/* Picker: Localidad */}
-            <View style={styles.inputContainer}>
-              <FontAwesome5 name="map-marker-alt" size={18} color="#888" style={styles.icon} />
-              <Picker selectedValue={localidadId} style={styles.picker} onValueChange={setLocalidadId}>
-                {localidades.map((l) => (
-                  <Picker.Item key={l.id} label={l.nombre} value={l.id.toString()} />
-                ))}
-              </Picker>
-            </View>
+            <FormInput
+              icon="lock"
+              placeholder="Contraseña"
+              value={contrasena}
+              onChangeText={setContrasena}
+              secureTextEntry={!showPassword}
+              rightIcon={
+                <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+                  <FontAwesome5 
+                    name={showPassword ? 'eye' : 'eye-slash'} 
+                    size={18} 
+                    color={COLORS.text.secondary} 
+                  />
+                </TouchableOpacity>
+              }
+            />
 
+            <FormInput
+              icon="lock"
+              placeholder="Confirmar Contraseña"
+              value={confirmarContrasena}
+              onChangeText={setConfirmarContrasena}
+              secureTextEntry={!showConfirm}
+              rightIcon={
+                <TouchableOpacity onPress={() => setShowConfirm(!showConfirm)}>
+                  <FontAwesome5 
+                    name={showConfirm ? 'eye' : 'eye-slash'} 
+                    size={18} 
+                    color={COLORS.text.secondary} 
+                  />
+                </TouchableOpacity>
+              }
+            />
+
+            {/* Indicador de fortaleza de contraseña */}
+            <PasswordStrengthIndicator strength={passwordStrength} />
+
+            {/* Pickers */}
+            <FormPicker
+              icon="building"
+              selectedValue={empresaId}
+              onValueChange={(value) => setEmpresaId(value)}
+              items={empresas.map((e) => ({ label: e.nombre, value: e.id.toString() }))}
+            />
+
+            <FormPicker
+              icon="user-tag"
+              selectedValue={rol}
+              onValueChange={(value) => setRol(value)}
+              items={rolesOptions.map((r) => ({ label: r, value: r }))}
+            />
+
+            <FormPicker
+              icon="map-marker-alt"
+              selectedValue={localidadId}
+              onValueChange={(value) => setLocalidadId(value)}
+              items={localidades.map((l) => ({ label: l.nombre, value: l.id.toString() }))}
+            />
+
+            {/* Mensaje de error */}
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-            <TouchableOpacity
-              style={[styles.button, { backgroundColor: dynamicStyles.confirmButton.backgroundColor }]}
-              onPress={handleCrearUsuario}
-            >
-              <Text style={styles.buttonText}>Crear Usuario</Text>
-            </TouchableOpacity>
+            {/* Botones */}
+            <FormButton 
+              title="Crear Usuario" 
+              onPress={handleCrearUsuario} 
+              style={{ backgroundColor: dynamicStyles.confirmButton.backgroundColor }}
+            />
 
-            <TouchableOpacity style={styles.cancelButton} onPress={() => navigation.goBack()}>
-              <Text style={styles.cancelButtonText}>Cancelar</Text>
-            </TouchableOpacity>
+            <FormButton 
+              title="Cancelar" 
+              onPress={() => navigation.goBack()} 
+              secondary
+            />
           </View>
         </ScrollView>
       </Animated.View>

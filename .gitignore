@@ -1,7 +1,5 @@
-# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+node_modules
 
-# dependencies
-node_modules/
 
 # Expo
 .expo/
@@ -34,8 +32,3 @@ yarn-error.*
 
 # typescript
 *.tsbuildinfo
-
-
-
-/android
-/ios

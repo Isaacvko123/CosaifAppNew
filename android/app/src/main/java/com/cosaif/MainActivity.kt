@@ -1,4 +1,4 @@
-package com.vianko.Cosaif
+package com.cosaif
 
 import android.os.Build
 import android.os.Bundle

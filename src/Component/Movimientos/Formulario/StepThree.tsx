@@ -19,7 +19,7 @@ import {
 import { MovementFormData } from './NewMovementForm';
 
 const API_URL =
-  process.env.EXPO_PUBLIC_API_URL || 'http://192.168.101.20:3000';
+  process.env.EXPO_PUBLIC_API_URL || 'http://10.10.10.6:3000';
 
 interface StepThreeProps {
   formData: MovementFormData;
@@ -49,7 +49,10 @@ const StepThree: React.FC<StepThreeProps> = ({
   /* ---------- envía movimiento ---------- */
   const handleConfirm = useCallback(async () => {
     if (!formData.movementType) {
-      Alert.alert('⚠️ Error', 'Debes seleccionar el tipo de movimiento antes de continuar.');
+      Alert.alert(
+        '⚠️ Error',
+        'Debes seleccionar el tipo de movimiento antes de continuar.'
+      );
       return;
     }
   
@@ -64,31 +67,38 @@ const StepThree: React.FC<StepThreeProps> = ({
   
       const user = JSON.parse(userStr);
   
-      // --- Construimos el payload limpio ---
-      const payload = {
-        empresaId: formData.empresaId ?? 1,                      // default 1
+      // --- Construimos el payload dinámicamente ---
+      const payload: Record<string, any> = {
+        empresaId: formData.empresaId ?? 1,
         creadoPorId: formData.creadoPorId ?? user.id,
         clienteId: formData.clienteId ?? user.id,
-        locomotiveNumber: formData.locomotiveNumber??1,
+        locomotiveNumber: formData.locomotiveNumber ?? 1,
         localidadId: formData.selectedLocalityId ?? 1,
-        viaOrigenId: formData.fromTrack !== null ? Number(formData.fromTrack) : 1,
-        viaDestinoId: formData.toTrack !== null ? Number(formData.toTrack) : 2,
         lavado: formData.service === 'Lavado',
         torno: formData.service === 'Torno',
         prioridad: formData.priority ? 'ALTA' : 'BAJA',
         tipoMovimiento: formData.movementType ?? 'REMOLCADA',
         estado: 'SOLICITADO',
+        fechaSolicitud: new Date().toISOString(),
         fechaInicio: formData.fechaInicio ?? new Date().toISOString(),
+        // instrucciones y posiciones
         instrucciones: formData.comments ?? '',
-        posicionCabina: formData.cabinPosition ?? 'DENTRO',       // <-- default DENTRO
-        posicionChimenea: formData.chimneyPosition ?? 'DENTRO',   // <-- default DENTRO
-        direccionEmpuje: formData.pushPull ?? 'EMPUJAR',          // <-- default EMPUJAR
+        posicionCabina: formData.cabinPosition ?? 'DENTRO',
+        posicionChimenea: formData.chimneyPosition ?? 'DENTRO',
+        direccionEmpuje: formData.pushPull ?? 'EMPUJAR',
         finalizado: false,
         incidenteGlobal: false,
-        fechaSolicitud: new Date().toISOString(),
-        fechaPausa: null,
-        fechaFin: null,
       };
+  
+      // siempre necesitamos vía origen
+      payload.viaOrigenId = formData.fromTrack != null
+        ? Number(formData.fromTrack)
+        : (() => { throw new Error('Debes seleccionar vía de origen'); })();
+  
+      // SOLO incluir viaDestinoId si el usuario la seleccionó (y no hay servicio que la oculte)
+      if (!formData.service && formData.toTrack != null) {
+        payload.viaDestinoId = Number(formData.toTrack);
+      }
   
       console.log('🚀 Payload que se enviará:', JSON.stringify(payload, null, 2));
   
@@ -108,11 +118,23 @@ const StepThree: React.FC<StepThreeProps> = ({
       }
   
       await res.json();
+  
+      // Limpieza local
+      try {
+        await AsyncStorage.multiRemove([
+          'movementDraft',
+          'movementSteps',
+          'movementTimestamp',
+        ]);
+      } catch (storageErr) {
+        console.warn('No se pudo limpiar AsyncStorage:', storageErr);
+      }
+  
       Alert.alert(
         '✅ Movimiento creado',
         'Tu movimiento ha sido registrado correctamente.',
         [{ text: 'OK', onPress: onFinish }],
-        { cancelable: false },
+        { cancelable: false }
       );
     } catch (err: any) {
       const msg =
