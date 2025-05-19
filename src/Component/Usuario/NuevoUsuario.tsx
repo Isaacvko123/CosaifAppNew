@@ -63,7 +63,7 @@ const PasswordStrengthIndicator: React.FC<{ strength: number }> = ({ strength })
         <Text style={{ color: COLORS.text.secondary, fontSize: theme.FONT_SIZE.sm }}>
           Seguridad de la contraseña
         </Text>
-        <Text style={{ color: getColor(), fontWeight: theme.FONT_WEIGHT.semibold }}>
+        <Text style={{ color: getColor(), fontWeight: String(theme.FONT_WEIGHT.semibold) as any }}>
           {strength}%
         </Text>
       </View>
@@ -314,7 +314,7 @@ const CrearNuevoUsuario: React.FC = () => {
   if (loading || fatalError) {
     return (
       <View style={styles.splashContainer}>
-        <Image source={require('../../../assets/logo.png')} style={styles.logo} />
+        <Image source={require('../../../assets/logo.png')} style={styles.logo as import('react-native').ImageStyle} />
         <ActivityIndicator size="large" color={COLORS.primary} style={{ marginTop: SPACING.lg }} />
         <Text style={styles.loadingText}>Cargando: {progress.toFixed(0)}%</Text>
         {fatalError && (
