@@ -31,7 +31,7 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import EditRonda from './EditRonda';
 
 // API y constantes
-const BASE_URL = 'http://10.10.10.6:3000';
+const BASE_URL = 'http://31.97.13.182:3000';
 const { width } = Dimensions.get('window');
 
 // Paleta de colores premium

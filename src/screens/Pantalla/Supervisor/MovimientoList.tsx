@@ -11,6 +11,7 @@ import {
   Text,
   TouchableOpacity,
   SectionList,
+  SectionListData,
   StyleSheet,
   ActivityIndicator,
   ScrollView,
@@ -27,7 +28,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 
-const BASE_URL = 'http://10.10.10.6:3000';
+const BASE_URL = 'http://31.97.13.182:3000';
 
 /* ✨ Paleta de colores mejorada */
 const ACCENTS = [
@@ -78,7 +79,12 @@ interface RondaInfo {
 
 /* ────────────────── Card Component ────────────────── */
 // Card component with heavy memoization
-const Card = memo(({ item, infoMap }) => {
+interface CardProps {
+  item: Ronda;
+  infoMap: Record<number, RondaInfo>;
+}
+
+const Card = memo(({ item, infoMap }: CardProps) => {
   const color = getAccent(item.rondaNumero);
   const info = infoMap[item.id];
   
@@ -167,7 +173,7 @@ const Card = memo(({ item, infoMap }) => {
       )}
     </View>
   );
-}, (prevProps, nextProps) => {
+}, (prevProps: CardProps, nextProps: CardProps) => {
   // Custom comparison para evitar re-renderizados innecesarios
   return (
     prevProps.item.id === nextProps.item.id &&
@@ -176,19 +182,28 @@ const Card = memo(({ item, infoMap }) => {
 });
 
 /* ────────────────── Header Compacto ────────────────── */
-const CompactHeader = memo(({ 
-  onRefresh, 
-  localidades, 
-  selectedLoc, 
-  setSelectedLoc, 
-  activeTab, 
-  handleTabChange 
-}) => {
+interface CompactHeaderProps {
+  onRefresh: () => void;
+  localidades: Localidad[];
+  selectedLoc: number | null;
+  setSelectedLoc: (id: number) => void;
+  activeTab: 'pendientes' | 'terminados';
+  handleTabChange: (tab: 'pendientes' | 'terminados') => void;
+}
+
+const CompactHeader = memo(({
+  onRefresh,
+  localidades,
+  selectedLoc,
+  setSelectedLoc,
+  activeTab,
+  handleTabChange
+}: CompactHeaderProps) => {
   return (
     <View style={styles.compactHeader}>
       <View style={styles.headerRow}>
         <View style={styles.tabButtonsContainer}>
-          {(['pendientes', 'terminados']).map((tab, idx) => (
+          {(['pendientes', 'terminados'] as const).map((tab, idx) => (
             <TouchableOpacity
               key={tab}
               activeOpacity={0.85}
@@ -213,7 +228,7 @@ const CompactHeader = memo(({
               </Text>
             </TouchableOpacity>
           ))}
-        </View>
+             </View>
         
         <TouchableOpacity 
           style={styles.refreshButton} 
@@ -260,9 +275,8 @@ const CompactHeader = memo(({
 const RondaList: React.FC = () => {
   const insets = useSafeAreaInsets();
 
-  // Para animaciones
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const sectionListRef = useRef(null);
+
+  const sectionListRef = useRef<SectionList<Ronda> | null>(null);
   
   /* Estado */
   const [localidades, setLocalidades] = useState<Localidad[]>([]);
@@ -280,11 +294,7 @@ const RondaList: React.FC = () => {
     loadLocalidades();
     
     // Animación inicial de fade in
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 300,
-      useNativeDriver: true,
-    }).start();
+  
   }, []);
 
   const loadLocalidades = async () => {
@@ -394,12 +404,14 @@ const RondaList: React.FC = () => {
     if (sectionListRef.current) {
       setTimeout(() => {
         try {
-          sectionListRef.current.scrollToLocation({
-            sectionIndex: 0,
-            itemIndex: 0,
-            animated: true,
-            viewOffset: 0,
-          });
+          if (sectionListRef.current) {
+            sectionListRef.current.scrollToLocation({
+              sectionIndex: 0,
+              itemIndex: 0,
+              animated: true,
+              viewOffset: 0,
+            });
+          }
         } catch (e) {
           console.warn('Error scrolling to top:', e);
         }
@@ -420,7 +432,7 @@ const RondaList: React.FC = () => {
   }, [activeTab]);
 
   // Handler para ocultar/mostrar header en scroll
-  const handleScroll = useCallback((event) => {
+  const handleScroll = useCallback((event: { nativeEvent: { contentOffset: { y: number } } }) => {
     const offsetY = event.nativeEvent.contentOffset.y;
     const shouldHideHeader = offsetY > 50;
     
@@ -431,21 +443,26 @@ const RondaList: React.FC = () => {
 
   /* ──────────────── Renderizadores ──────────────── */
   const renderSectionHeader = useCallback(
-    ({ section }) => (
+    ({ section }: { section: SectionListData<Ronda> }) => (
       <LinearGradient
-        colors={[section.color, `${section.color}99`]}
+        colors={[
+          section.color ?? ACCENTS[0],
+          `${section.color ?? ACCENTS[0]}99`
+        ]}
         style={styles.sectionHeader}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
       >
-        <Text style={styles.sectionHeaderText}>{section.title}</Text>
+        <Text style={styles.sectionHeaderText}>
+          {section.title}
+        </Text>
       </LinearGradient>
     ),
     []
   );
 
   const renderItem = useCallback(
-    (props) => <Card {...props} infoMap={infoMap} />,
+    (props: { item: Ronda }) => <Card {...props} infoMap={infoMap} />,
     [infoMap]
   );
 
@@ -507,7 +524,7 @@ const RondaList: React.FC = () => {
             </TouchableOpacity>
           </View>
         ) : (
-          <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
+          <Animated.View style={{ flex: 1,  }}>
             <SectionList
               ref={sectionListRef}
               sections={sections}

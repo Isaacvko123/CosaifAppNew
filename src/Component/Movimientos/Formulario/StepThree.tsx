@@ -10,7 +10,6 @@ import {
   StyleSheet,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
 import {
   formStylesBase as styles,
   formStylesPorRol,
@@ -18,24 +17,19 @@ import {
 } from './formStyles';
 import { MovementFormData } from './NewMovementForm';
 
-const API_URL =
-  process.env.EXPO_PUBLIC_API_URL || 'http://10.10.10.6:3000';
-
 interface StepThreeProps {
   formData: MovementFormData;
   setFormData: React.Dispatch<React.SetStateAction<MovementFormData>>;
   onFinish: () => void;
 }
 
-const StepThree: React.FC<StepThreeProps> = ({
-  formData,
-  setFormData,
-  onFinish,
-}) => {
+const API_URL =
+  process.env.EXPO_PUBLIC_API_URL || 'http://31.97.13.182:3000';
+
+const StepThree: React.FC<StepThreeProps> = ({ formData, setFormData, onFinish }) => {
   const [rolId, setRolId] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  /* ---------- obtiene rol del usuario ---------- */
   useEffect(() => {
     (async () => {
       const userStr = await AsyncStorage.getItem('user');
@@ -46,7 +40,6 @@ const StepThree: React.FC<StepThreeProps> = ({
   const rolKey = rolFormMap[rolId ?? -1];
   const dynamicStyles = formStylesPorRol[rolKey] || formStylesPorRol.CLIENTE;
 
-  /* ---------- envía movimiento ---------- */
   const handleConfirm = useCallback(async () => {
     if (!formData.movementType) {
       Alert.alert(
@@ -55,19 +48,17 @@ const StepThree: React.FC<StepThreeProps> = ({
       );
       return;
     }
-  
+
     try {
       setIsSubmitting(true);
-  
+
       const [userStr, token] = await Promise.all([
         AsyncStorage.getItem('user'),
         AsyncStorage.getItem('token'),
       ]);
       if (!userStr || !token) throw new Error('Falta token o sesión de usuario');
-  
+
       const user = JSON.parse(userStr);
-  
-      // --- Construimos el payload dinámicamente ---
       const payload: Record<string, any> = {
         empresaId: formData.empresaId ?? 1,
         creadoPorId: formData.creadoPorId ?? user.id,
@@ -81,7 +72,6 @@ const StepThree: React.FC<StepThreeProps> = ({
         estado: 'SOLICITADO',
         fechaSolicitud: new Date().toISOString(),
         fechaInicio: formData.fechaInicio ?? new Date().toISOString(),
-        // instrucciones y posiciones
         instrucciones: formData.comments ?? '',
         posicionCabina: formData.cabinPosition ?? 'DENTRO',
         posicionChimenea: formData.chimneyPosition ?? 'DENTRO',
@@ -89,19 +79,17 @@ const StepThree: React.FC<StepThreeProps> = ({
         finalizado: false,
         incidenteGlobal: false,
       };
-  
-      // siempre necesitamos vía origen
+
       payload.viaOrigenId = formData.fromTrack != null
         ? Number(formData.fromTrack)
         : (() => { throw new Error('Debes seleccionar vía de origen'); })();
-  
-      // SOLO incluir viaDestinoId si el usuario la seleccionó (y no hay servicio que la oculte)
+
       if (!formData.service && formData.toTrack != null) {
         payload.viaDestinoId = Number(formData.toTrack);
       }
-  
-      console.log('🚀 Payload que se enviará:', JSON.stringify(payload, null, 2));
-  
+
+      console.log('🚀 Payload:', payload);
+
       const res = await fetch(`${API_URL}/movimientos`, {
         method: 'POST',
         headers: {
@@ -111,31 +99,21 @@ const StepThree: React.FC<StepThreeProps> = ({
         },
         body: JSON.stringify(payload),
       });
-  
+
       if (!res.ok) {
         const txt = await res.text();
         throw new Error(`Error ${res.status}: ${txt}`);
       }
-  
+
       await res.json();
-  
-      // Limpieza local
-      try {
-        await AsyncStorage.multiRemove([
-          'movementDraft',
-          'movementSteps',
-          'movementTimestamp',
-        ]);
-      } catch (storageErr) {
-        console.warn('No se pudo limpiar AsyncStorage:', storageErr);
-      }
-  
-      Alert.alert(
-        '✅ Movimiento creado',
-        'Tu movimiento ha sido registrado correctamente.',
-        [{ text: 'OK', onPress: onFinish }],
-        { cancelable: false }
-      );
+      await AsyncStorage.multiRemove([
+        'movementDraft',
+        'movementSteps',
+        'movementTimestamp',
+      ]);
+
+      // Ahora llamamos onFinish para que el padre navegue
+      onFinish();
     } catch (err: any) {
       const msg =
         err instanceof TypeError
@@ -146,9 +124,7 @@ const StepThree: React.FC<StepThreeProps> = ({
       setIsSubmitting(false);
     }
   }, [formData, onFinish]);
-  
 
-  /* ---------- UI ---------- */
   return (
     <View style={{ marginTop: 10 }}>
       <Text style={styles.label}>Instrucciones y/o comentarios:</Text>
@@ -161,19 +137,22 @@ const StepThree: React.FC<StepThreeProps> = ({
         multiline
         placeholder="Escribe comentarios o instrucciones adicionales…"
         value={formData.comments}
-        onChangeText={(text) => setFormData({ ...formData, comments: text })}
+        onChangeText={text => setFormData({ ...formData, comments: text })}
         editable={!isSubmitting}
       />
 
       <TouchableOpacity
-        style={[styles.confirmButton, dynamicStyles.confirmButton, isSubmitting && { opacity: 0.6 }]}
+        style={[
+          styles.confirmButton,
+          dynamicStyles.confirmButton,
+          isSubmitting && { opacity: 0.6 },
+        ]}
         onPress={handleConfirm}
         disabled={isSubmitting}
       >
         <Text style={styles.confirmButtonText}>Confirmar solicitud</Text>
       </TouchableOpacity>
 
-      {/* Overlay de espera */}
       {isSubmitting && (
         <View style={local.overlay}>
           <ActivityIndicator size="large" color="#12AB35" />
@@ -184,7 +163,6 @@ const StepThree: React.FC<StepThreeProps> = ({
   );
 };
 
-/* ---------- estilos internos ---------- */
 const local = StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,

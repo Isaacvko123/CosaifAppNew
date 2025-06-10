@@ -178,7 +178,9 @@ const Menu: React.FC<MenuProps> = ({ visible, onClose }) => {
         key={item.id}
         style={[
           estilosBase.menuItem,
-          activeItem === item.id && rolStyles.activeMenuItem
+          activeItem === item.id
+            ? estilosBase.activeMenuItem
+            : undefined
         ]} 
         onPress={item.onPress}
         activeOpacity={0.7}
@@ -227,7 +229,6 @@ const Menu: React.FC<MenuProps> = ({ visible, onClose }) => {
         {/* Información del usuario */}
         <View style={estilosBase.userInfoContainer}>
           <View style={[estilosBase.avatarContainer, rolStyles.avatarContainer]}>
-            <Text style={[estilosBase.avatarText, { color: '#FFFFFF' }]}>{getInitials()}</Text>
           </View>
           <View style={estilosBase.userTextContainer}>
             <Text style={[estilosBase.userName, rolStyles.userName]}>
@@ -305,7 +306,7 @@ const Menu: React.FC<MenuProps> = ({ visible, onClose }) => {
 const styles = StyleSheet.create({
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgb(255, 255, 255)',
   },
 });
 

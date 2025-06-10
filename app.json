@@ -1,42 +1,41 @@
 {
   "expo": {
-"plugins": [
-  [
-    "expo-build-properties",
-    {
-      "android": {
-        "compileSdkVersion": 34,
-        "targetSdkVersion": 34
-      }
-    }
-  ],
-  [
-    "onesignal-expo-plugin",
-    {
-      "mode": "development"
-    }
-  ],
-  [
-    "expo-notifications",
-    {
-      "icon": "./assets/logo.png",
-      "color": "#C53030"
-    }
-  ],
-  [
-    "expo-background-fetch",
-    {
-      "minimumInterval": 15
-    }
-  ],
-  [
-    "expo-task-manager",
-    {
-      "backgroundPermissions": true
-    }
-  ]
-],
-
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 34,
+            "targetSdkVersion": 34
+          }
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/logo.png",
+          "color": "#C53030"
+        }
+      ],
+      [
+        "expo-background-fetch",
+        {
+          "minimumInterval": 15
+        }
+      ],
+      [
+        "expo-task-manager",
+        {
+          "backgroundPermissions": true
+        }
+      ],
+         [
+        "expo-task-manager",
+        {
+          "backgroundPermissions": true
+        }
+      ]
+    ],
     "name": "Cosaif",
     "slug": "Cosaif",
     "owner": "vianko",

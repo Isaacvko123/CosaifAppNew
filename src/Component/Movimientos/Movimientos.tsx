@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -18,6 +18,7 @@ import {
   Animated,
   AccessibilityInfo,
   ScrollView,
+  Dimensions,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Calendar, DateData } from 'react-native-calendars';
@@ -28,37 +29,50 @@ import NewMovementForm from './Formulario/NewMovementForm';
 import NetInfo from '@react-native-community/netinfo';
 
 // Enable LayoutAnimation on Android
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
-// API and helper constants
-const API_BASE = 'http://10.10.10.6:3000';
+// Constants
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const API_BASE = 'http://31.97.13.182:3000';
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const ITEMS_PER_PAGE = 50;
+const MAX_CACHED_ITEMS = 200;
+const DEBOUNCE_DELAY = 300;
 
-// Color palette
+// Enhanced Color palette with gradients
 const COLORS = {
-  bg: '#F0F4F8',
-  bgDark: '#E1E8EF',
+  bg: '#F5F7FA',
+  bgDark: '#E8ECF0',
   card: '#FFFFFF',
-  border: '#DDD',
-  borderFocus: '#BBB',
+  cardHover: '#FAFBFC',
+  border: '#E1E4E8',
+  borderFocus: '#4A90E2',
   primary: '#2D6A4F',
-  primaryLight: '#4D8D6E',
-  primaryDark: '#1b4d3e',
-  text: '#333333',
-  textLight: '#666666',
-  textDark: '#111111',
+  primaryLight: '#52B788',
+  primaryDark: '#1B5E3F',
+  primaryGradient: ['#2D6A4F', '#52B788'],
+  text: '#2C3E50',
+  textLight: '#7B8794',
+  textDark: '#1A202C',
   red: '#E74C3C',
+  redLight: '#FF6B6B',
   redDark: '#C0392B',
-  green: '#2ECC71',
-  yellow: '#F1C40F',
-  shadow: 'rgba(0,0,0,0.1)',
-  backdrop: 'rgba(0,0,0,0.5)',
-  disabled: '#CCCCCC',
+  green: '#27AE60',
+  greenLight: '#4ADE80',
+  yellow: '#F39C12',
+  blue: '#3498DB',
+  blueLight: '#5DADE2',
+  purple: '#9B59B6',
+  shadow: 'rgb(0, 0, 0)',
+  shadowDark: 'rgb(0, 0, 0)',
+  backdrop: 'rgb(0, 0, 0)',
+  disabled: '#CBD5E0',
+  info: '#3498DB',
+  success: '#27AE60',
+  warning: '#F39C12',
+  error: '#E74C3C',
 };
 
+// Interfaces
 interface Option {
   id: number;
   nombre: string;
@@ -81,36 +95,107 @@ type TabType = 'Actuales' | 'Pasados';
 type DropdownType = 'loc' | 'emp' | null;
 type CalendarType = 'from' | 'to' | null;
 
-// A separate component for the NewMovementForm wrapper
-// This prevents hooks rendering inconsistency issues
-const MovementFormWrapper = ({ onFinish }: { onFinish: () => void }) => {
-  return <NewMovementForm onFinish={onFinish} />;
+// Helper functions
+const getCurrentMonthDateRange = () => {
+  const now = new Date();
+  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  return {
+    start: firstDay.toISOString().slice(0, 10),
+    end: lastDay.toISOString().slice(0, 10)
+  };
 };
 
+// Debounce hook for better performance
+const useDebounce = <T,>(value: T, delay: number): T => {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+
+  return debouncedValue;
+};
+
+// Memoized Movement Form Wrapper
+const MovementFormWrapper = React.memo(({ onFinish }: { onFinish: () => void }) => {
+  return <NewMovementForm onFinish={onFinish} />;
+});
+
+// Loading skeleton component for better UX
+const LoadingSkeleton = () => (
+  <View style={styles.skeletonContainer}>
+    {[...Array(5)].map((_, i) => (
+      <View key={i} style={styles.skeletonRow}>
+        <View style={styles.skeletonCell} />
+        <View style={styles.skeletonCell} />
+        <View style={styles.skeletonCell} />
+        <View style={styles.skeletonCell} />
+      </View>
+    ))}
+  </View>
+);
+
+// Enhanced status badge component
+const StatusBadge = React.memo(({ status }: { status: string }) => {
+  const getStatusStyle = () => {
+    switch (status) {
+      case 'SOLICITADO': return styles.statusSolicitado;
+      case 'EN_PROCESO': return styles.statusEnProceso;
+      case 'CONCLUIDO': return styles.statusConcluido;
+      case 'DETENIDO': return styles.statusDetenido;
+      default: return styles.statusDefault;
+    }
+  };
+
+  return (
+    <View style={[styles.statusBadge, getStatusStyle()]}>
+      <Text style={styles.statusBadgeText}>{status}</Text>
+    </View>
+  );
+});
+
 export default function Movimientos() {
-  // Core state
+  // Animation values
+
+  
+  // Core state - Optimized with refs for non-UI updates
   const [tab, setTab] = useState<TabType>('Actuales');
   const [allMovements, setAllMovements] = useState<Movement[]>([]);
   const [displayedMovements, setDisplayedMovements] = useState<Movement[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [selectedMovement, setSelectedMovement] = useState<Movement | null>(null);
   
+  // Cache ref for better performance
+  const movementsCache = useRef<Map<string, Movement[]>>(new Map());
+  
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [totalMovements, setTotalMovements] = useState(0);
   
   // User & role state
   const [user, setUser] = useState<User | null>(null);
   const [isSup, setIsSup] = useState(false);
   const [isCli, setIsCli] = useState(false);
   
-  // Filter state
+  // Filter state with debouncing
   const [locOpts, setLocOpts] = useState<Option[]>([]);
   const [empOpts, setEmpOpts] = useState<Option[]>([]);
   const [locId, setLocId] = useState<number | null>(null);
   const [empId, setEmpId] = useState<number | null>(null);
   const [from, setFrom] = useState<string>('');
   const [to, setTo] = useState<string>('');
+  
+  // Debounced filter values
+  const debouncedFrom = useDebounce(from, DEBOUNCE_DELAY);
+  const debouncedTo = useDebounce(to, DEBOUNCE_DELAY);
   
   // UI state
   const [drop, setDrop] = useState<DropdownType>(null);
@@ -122,264 +207,420 @@ export default function Movimientos() {
   const [statusAnimation] = useState(new Animated.Value(0));
   const [showDetailModal, setShowDetailModal] = useState(false);
   
-  // Get label for dropdowns
+  // Performance tracking
+
+
+  // Optimized label function with memoization
   const labelFor = useCallback(
     (opts: Option[], id: number | null) => 
       id == null ? 'Todas' : opts.find((o) => o.id === id)?.nombre ?? '—',
     []
   );
 
-  // Network status monitoring
+  // Enhanced entrance animation
+ 
+
+  // Optimized network monitoring
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener(state => {
-      setIsOffline(!state.isConnected);
+      const wasOffline = isOffline;
+      const isNowOffline = !state.isConnected;
       
-      if (!state.isConnected) {
-        showStatusMessage('Sin conexión - Mostrando datos almacenados');
-      } else if (statusMessage === 'Sin conexión - Mostrando datos almacenados') {
-        showStatusMessage('Conexión restaurada', 3000);
+      if (wasOffline !== isNowOffline) {
+        setIsOffline(isNowOffline);
+        
+        if (isNowOffline) {
+          showStatusMessage('Sin conexión - Mostrando datos almacenados', 0, 'warning');
+        } else if (wasOffline) {
+          showStatusMessage('Conexión restaurada', 3000, 'success');
+          setRefreshing(true); // Auto-refresh on reconnection
+        }
       }
     });
     
     return () => unsubscribe();
-  }, [statusMessage]);
+  }, [isOffline]);
 
-  // Show temporary status messages
-  const showStatusMessage = useCallback((message: string, duration = 0) => {
+  // Enhanced status message with better animations
+  const showStatusMessage = useCallback((
+    message: string, 
+    duration = 0, 
+    type: 'info' | 'success' | 'error' | 'warning' = 'info'
+  ) => {
     setStatusMessage(message);
     
-    // Animate in
-    Animated.timing(statusAnimation, {
-      toValue: 1,
-      duration: 300,
-      useNativeDriver: true,
-    }).start();
-    
-    // Auto-hide after duration if specified
-    if (duration > 0) {
-      setTimeout(() => {
+    // Smooth fade in
+    Animated.sequence([
+      Animated.timing(statusAnimation, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      ...(duration > 0 ? [
+        Animated.delay(duration),
         Animated.timing(statusAnimation, {
           toValue: 0,
           duration: 300,
           useNativeDriver: true,
-        }).start(() => setStatusMessage(null));
-      }, duration);
-    }
+        })
+      ] : [])
+    ]).start(() => {
+      if (duration > 0) setStatusMessage(null);
+    });
   }, [statusAnimation]);
-  
-  // Apply all filters and pagination
+
+  // Optimized filter and pagination function
   const applyFiltersAndPagination = useCallback((movements: Movement[]) => {
     if (!movements || movements.length === 0) {
       setDisplayedMovements([]);
       setTotalPages(1);
+      setTotalMovements(0);
       return;
     }
     
-    // Filter by tab - Actuales (not finalized) vs Pasados (finalized)
-    let filtered = tab === 'Actuales'
-      ? movements.filter(m => !m.finalizado)
-      : movements.filter(m => m.finalizado);
-    
-    // Apply supervisor filters if applicable
-    if (isSup) {
-      if (locId != null) filtered = filtered.filter(m => m.localidadId === locId);
-      if (empId != null) filtered = filtered.filter(m => m.empresaId === empId);
-    }
-    
-    // Apply date filters
-    if (from) {
-      const f = new Date(from);
-      filtered = filtered.filter(m => {
-        const date = new Date(m.fechaInicio || m.fechaSolicitud);
-        return !isNaN(date.getTime()) && date >= f;
-      });
-    }
-    
-    if (to) {
-      const t = new Date(to);
-      filtered = filtered.filter(m => {
-        const date = new Date(m.fechaFin || m.fechaInicio || m.fechaSolicitud);
-        return !isNaN(date.getTime()) && date <= t;
-      });
-    }
-    
-    // Calculate total pages
-    const total = Math.ceil(filtered.length / ITEMS_PER_PAGE);
-    setTotalPages(Math.max(1, total));
-    
-    // Apply pagination
-    const start = (currentPage - 1) * ITEMS_PER_PAGE;
-    const paginatedData = filtered.slice(start, start + ITEMS_PER_PAGE);
-    
-    setDisplayedMovements(paginatedData);
-  }, [tab, isSup, locId, empId, from, to, currentPage]);
+    // Use requestAnimationFrame for smooth updates
+    requestAnimationFrame(() => {
+      // Create filter key for caching
+      const filterKey = `${tab}-${locId}-${empId}-${debouncedFrom}-${debouncedTo}`;
+      
+      // Check cache first
+      const cached = movementsCache.current.get(filterKey);
+      if (cached && currentPage === 1) {
+        setDisplayedMovements(cached.slice(0, ITEMS_PER_PAGE));
+        setTotalMovements(cached.length);
+        setTotalPages(Math.ceil(cached.length / ITEMS_PER_PAGE));
+        return;
+      }
+      
+      // Filter by tab
+      let filtered = tab === 'Actuales'
+        ? movements.filter(m => !m.finalizado)
+        : movements.filter(m => m.finalizado);
+      
+      // Apply supervisor filters
+      if (isSup) {
+        if (locId != null) filtered = filtered.filter(m => m.localidadId === locId);
+        if (empId != null) filtered = filtered.filter(m => m.empresaId === empId);
+      }
+      
+      // Apply date filters with optimization
+      if (debouncedFrom) {
+        const f = new Date(debouncedFrom).getTime();
+        filtered = filtered.filter(m => {
+          const date = new Date(m.fechaInicio || m.fechaSolicitud).getTime();
+          return !isNaN(date) && date >= f;
+        });
+      }
+      
+      if (debouncedTo) {
+        const t = new Date(debouncedTo).getTime();
+        filtered = filtered.filter(m => {
+          const date = new Date(m.fechaFin || m.fechaInicio || m.fechaSolicitud).getTime();
+          return !isNaN(date) && date <= t;
+        });
+      }
+      
+      // Cache the filtered results
+      movementsCache.current.set(filterKey, filtered);
+      
+      // Update totals
+      setTotalMovements(filtered.length);
+      const total = Math.ceil(filtered.length / ITEMS_PER_PAGE);
+      setTotalPages(Math.max(1, total));
+      
+      // Apply pagination
+      const start = (currentPage - 1) * ITEMS_PER_PAGE;
+      const paginatedData = filtered.slice(start, start + ITEMS_PER_PAGE);
+      
+      // Smooth transition
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setDisplayedMovements(paginatedData);
+    });
+  }, [tab, isSup, locId, empId, debouncedFrom, debouncedTo, currentPage]);
 
-  // Fetch and cache locations
+  // Optimized fetch functions with better error handling
   const fetchAndCacheLocations = useCallback(async (token: string) => {
     try {
+      const cacheKey = 'cached_locations_v2';
+      
+      // Try cache first
+      const cachedData = await AsyncStorage.getItem(cacheKey);
+      if (cachedData) {
+        const { data, timestamp } = JSON.parse(cachedData);
+        const isExpired = Date.now() - timestamp > 24 * 60 * 60 * 1000; // 24 hours
+        
+        if (!isExpired) {
+          setLocOpts(data);
+          return data;
+        }
+      }
+      
+      // Fetch fresh data
       const response = await fetch(`${API_BASE}/localidades`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
       });
       
-      if (!response.ok) throw new Error('Failed to fetch locations');
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
       
       const locs: any[] = await response.json();
       const locations = locs.map((l) => ({ id: l.id, nombre: l.nombre }));
       
+      // Update state and cache
       setLocOpts(locations);
-      await AsyncStorage.setItem('cached_locations', JSON.stringify(locations));
+      await AsyncStorage.setItem(cacheKey, JSON.stringify({
+        data: locations,
+        timestamp: Date.now()
+      }));
+      
       return locations;
     } catch (error) {
       console.error('Error fetching locations:', error);
       
-      const cachedData = await AsyncStorage.getItem('cached_locations');
-      if (cachedData) {
-        const locations = JSON.parse(cachedData);
-        setLocOpts(locations);
-        return locations;
+      // Fallback to any cached data
+      try {
+        const cachedData = await AsyncStorage.getItem('cached_locations_v2');
+        if (cachedData) {
+          const { data } = JSON.parse(cachedData);
+          setLocOpts(data);
+          return data;
+        }
+      } catch (cacheError) {
+        console.error('Cache error:', cacheError);
       }
+      
       return [];
     }
   }, []);
 
-  // Fetch and cache companies
   const fetchAndCacheCompanies = useCallback(async (token: string) => {
     try {
+      const cacheKey = 'cached_companies_v2';
+      
+      // Try cache first
+      const cachedData = await AsyncStorage.getItem(cacheKey);
+      if (cachedData) {
+        const { data, timestamp } = JSON.parse(cachedData);
+        const isExpired = Date.now() - timestamp > 24 * 60 * 60 * 1000;
+        
+        if (!isExpired) {
+          setEmpOpts(data);
+          return data;
+        }
+      }
+      
       const response = await fetch(`${API_BASE}/empresas`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
       });
       
-      if (!response.ok) throw new Error('Failed to fetch companies');
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
       
       const emps: any[] = await response.json();
       const companies = emps.map((e) => ({ id: e.id, nombre: e.nombre }));
       
       setEmpOpts(companies);
-      await AsyncStorage.setItem('cached_companies', JSON.stringify(companies));
+      await AsyncStorage.setItem(cacheKey, JSON.stringify({
+        data: companies,
+        timestamp: Date.now()
+      }));
+      
       return companies;
     } catch (error) {
       console.error('Error fetching companies:', error);
       
-      const cachedData = await AsyncStorage.getItem('cached_companies');
-      if (cachedData) {
-        const companies = JSON.parse(cachedData);
-        setEmpOpts(companies);
-        return companies;
+      try {
+        const cachedData = await AsyncStorage.getItem('cached_companies_v2');
+        if (cachedData) {
+          const { data } = JSON.parse(cachedData);
+          setEmpOpts(data);
+          return data;
+        }
+      } catch (cacheError) {
+        console.error('Cache error:', cacheError);
       }
+      
       return [];
     }
   }, []);
 
-  // Load from cache
+  // Optimized cache loading
   const loadFromCache = useCallback(async () => {
     try {
-      showStatusMessage('Sin conexión - Cargando datos almacenados');
+      showStatusMessage('Cargando datos almacenados...', 0, 'info');
       
       const [cachedLocations, cachedCompanies, cachedMovements] = await Promise.all([
-        AsyncStorage.getItem('cached_locations'),
-        AsyncStorage.getItem('cached_companies'),
-        AsyncStorage.getItem('cached_movements')
+        AsyncStorage.getItem('cached_locations_v2'),
+        AsyncStorage.getItem('cached_companies_v2'),
+        AsyncStorage.getItem('cached_movements_v2')
       ]);
       
-      if (cachedLocations) setLocOpts(JSON.parse(cachedLocations));
-      if (cachedCompanies) setEmpOpts(JSON.parse(cachedCompanies));
+      let hasData = false;
+      
+      if (cachedLocations) {
+        const { data } = JSON.parse(cachedLocations);
+        setLocOpts(data);
+        hasData = true;
+      }
+      
+      if (cachedCompanies) {
+        const { data } = JSON.parse(cachedCompanies);
+        setEmpOpts(data);
+        hasData = true;
+      }
+      
       if (cachedMovements) {
-        const movements = JSON.parse(cachedMovements);
-        setAllMovements(movements);
-        applyFiltersAndPagination(movements);
+        const { data } = JSON.parse(cachedMovements);
+        setAllMovements(data);
+        applyFiltersAndPagination(data);
+        hasData = true;
       }
       
       setLoading(false);
+      
+      if (hasData) {
+        showStatusMessage('Datos cargados desde caché', 2000, 'success');
+      } else {
+        showStatusMessage('No hay datos almacenados', 3000, 'warning');
+      }
     } catch (error) {
       console.error('Error loading from cache:', error);
       setLoading(false);
-      Alert.alert('Error', 'No se pudieron cargar los datos almacenados');
+      Alert.alert(
+        'Error',
+        'No se pudieron cargar los datos almacenados',
+        [{ text: 'OK', style: 'default' }],
+        { cancelable: true }
+      );
     }
   }, [applyFiltersAndPagination, showStatusMessage]);
 
-  // Load user data and initial options
+  // Optimized user data loading
   useEffect(() => {
-    const loadUserData = async () => {
-      try {
-        setLoading(true);
-        
-        // Load from AsyncStorage
-        const [uStr, token] = await Promise.all([
-          AsyncStorage.getItem('user'),
-          AsyncStorage.getItem('token'),
-        ]);
-        
-        if (!uStr || !token) throw new Error('No session data found');
-        
-        const u = JSON.parse(uStr);
-        const userData = { ...u, token };
-        
-        setUser(userData);
-        setIsSup(u.rol === 'SUPERVISOR' && u.empresa?.nombre.toLowerCase() === 'vianko');
-        setIsCli(u.rol === 'CLIENTE');
-        
-        // Cache locations for offline use
-        await fetchAndCacheLocations(token);
-        
-        // Cache companies if supervisor
-        if (u.rol === 'SUPERVISOR' && u.empresa?.nombre.toLowerCase() === 'vianko') {
-          await fetchAndCacheCompanies(token);
-        }
-        
-        setLoading(false);
-      } catch (error) {
-        console.error('Error loading user data:', error);
-        setLoading(false);
-        
-        // Try loading from cache if offline
-        const netInfo = await NetInfo.fetch();
-        if (!netInfo.isConnected) {
-          loadFromCache();
-          return;
-        }
-        
-        Alert.alert(
-          'Error de sesión',
-          'No se pudo cargar la información de usuario. ¿Desea intentar nuevamente?',
-          [
-            { text: 'Cancelar', style: 'cancel' },
-            { text: 'Reintentar', onPress: loadUserData }
-          ]
-        );
+    let isMounted = true;
+    
+   const loadUserData = async () => {
+  try {
+    setLoading(true);
+
+    const [uStr, token] = await Promise.all([
+      AsyncStorage.getItem('user'),
+      AsyncStorage.getItem('token'),
+    ]);
+
+    if (!isMounted) return;
+    if (!uStr || !token) throw new Error('No session data found');
+
+    const u = JSON.parse(uStr);
+    const userData = { ...u, token };
+
+    setUser(userData);
+    const esCliente = u.rol === 'CLIENTE';
+    setIsCli(esCliente);
+    setIsSup(u.rol === 'SUPERVISOR' && u.empresa?.nombre.toLowerCase() === 'vianko');
+
+    // 1) Carga todas las localidades
+    const locs = await fetchAndCacheLocations(token);
+
+    // 2) Si es CLIENTE, filtra solo la suya y fija locId
+    if (esCliente && u.localidadId != null) {
+      const miLoc = locs.find((l: Option) => l.id === u.localidadId);
+      if (miLoc) {
+        setLocOpts([miLoc]);
+        setLocId(miLoc.id);
       }
-    };
+    }
+
+    // 3) Carga empresas solo si es SUP
+    const promises = [];
+    if (isSup) {
+      promises.push(fetchAndCacheCompanies(token));
+    }
+    await Promise.all(promises);
+
+    if (isMounted) {
+      setLoading(false);
+    }
+  } catch (error) {
+    console.error('Error loading user data:', error);
+
+    if (!isMounted) return;
+    setLoading(false);
+
+    const netInfo = await NetInfo.fetch();
+    if (!netInfo.isConnected) {
+      loadFromCache();
+      return;
+    }
+
+    Alert.alert(
+      'Error de sesión',
+      'No se pudo cargar la información de usuario',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Reintentar', onPress: () => loadUserData() }
+      ],
+      { cancelable: false }
+    );
+  }
+};
+
     
     loadUserData();
+    
+    return () => {
+      isMounted = false;
+    };
   }, [fetchAndCacheLocations, fetchAndCacheCompanies, loadFromCache]);
 
-  // Load movements based on filters and tab
+  // Optimized movements loading with intelligent caching
   useEffect(() => {
+    let isMounted = true;
+    const abortController = new AbortController();
+    
     const loadMovements = async () => {
       if (!user) return;
       
       try {
-        if (!refreshing) setLoading(true);
+        if (!refreshing && isMounted) setLoading(true);
         
         const { token, localidadId: uLoc, empresaId: uEmp } = user;
         const selectedLocal = locId != null ? locId : uLoc;
         const selectedEmp = empId != null ? empId : uEmp;
         
-        // We need to get all movements first, then filter by finalizado status on client-side
-        // for Actuales (finalizado = false) and Pasados (finalizado = true)
         const ep = isSup
           ? '/movimientos'
           : `/movimientos/empresa/${selectedEmp}/localidad/${selectedLocal}`;
         
-        // Fetch movements
-        const response = await fetch(`${API_BASE}${ep}`, {
-          headers: { Authorization: `Bearer ${token}` }
+        let url = `${API_BASE}${ep}`;
+        
+        const params = new URLSearchParams();
+        if (debouncedFrom) params.append('fechaInicio', debouncedFrom);
+        if (debouncedTo) params.append('fechaFin', debouncedTo);
+        
+        if (params.toString()) {
+          url += `?${params.toString()}`;
+        }
+        
+        const response = await fetch(url, {
+          headers: { 
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          signal: abortController.signal
         });
         
-        if (!response.ok) throw new Error('Failed to fetch movements');
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         
         const raw: any[] = await response.json();
         
-        // Map API data to Movement type
+        if (!isMounted) return;
+        
+        // Optimized mapping with batch processing
         const movements: Movement[] = raw.map((r) => ({
           id: r.id,
           locomotora: r.locomotiveNumber,
@@ -413,289 +654,376 @@ export default function Movimientos() {
           nuevaFechaPostergacion: r.nuevaFechaPostergacion,
         }));
         
-        // Cache all movements
+        // Update state
         setAllMovements(movements);
-        await AsyncStorage.setItem('cached_movements', JSON.stringify(movements));
         
-        // Apply filters and pagination
+        // Smart caching
+        const itemsToCache = movements.slice(0, MAX_CACHED_ITEMS);
+        AsyncStorage.setItem('cached_movements_v2', JSON.stringify({
+          data: itemsToCache,
+          timestamp: Date.now()
+        })).catch(console.error);
+        
         applyFiltersAndPagination(movements);
         
-        if (refreshing) {
-          showStatusMessage('Datos actualizados', 2000);
+        if (refreshing && isMounted) {
+          showStatusMessage('Datos actualizados', 2000, 'success');
         }
-      } catch (error) {
+        
+        // Show data range info
+        if (!debouncedFrom && !debouncedTo && isMounted) {
+          showStatusMessage(`Mostrando movimientos del mes actual`, 3000, 'info');
+        }
+      } catch (error: any) {
+        if (error.name === 'AbortError') return;
+        
         console.error('Error loading movements:', error);
         
-        // Try loading from cache if offline
+        if (!isMounted) return;
+        
         const netInfo = await NetInfo.fetch();
         if (!netInfo.isConnected) {
-          const cachedMovements = await AsyncStorage.getItem('cached_movements');
-          if (cachedMovements) {
-            const movements = JSON.parse(cachedMovements);
-            setAllMovements(movements);
-            applyFiltersAndPagination(movements);
-            showStatusMessage('Mostrando datos almacenados');
-          } else {
-            showStatusMessage('No hay datos disponibles sin conexión');
+          try {
+            const cachedMovements = await AsyncStorage.getItem('cached_movements_v2');
+            if (cachedMovements) {
+              const { data } = JSON.parse(cachedMovements);
+              setAllMovements(data);
+              applyFiltersAndPagination(data);
+              showStatusMessage('Mostrando datos almacenados', 0, 'warning');
+            } else {
+              showStatusMessage('No hay datos disponibles sin conexión', 0, 'error');
+            }
+          } catch (cacheError) {
+            console.error('Cache error:', cacheError);
           }
-        } else if (refreshing) {
-          Alert.alert('Error', 'No se pudieron actualizar los movimientos');
         } else {
-          Alert.alert('Error', 'No se pudieron cargar los movimientos');
+          const message = refreshing 
+            ? 'No se pudieron actualizar los movimientos'
+            : 'Error al cargar los movimientos';
+          
+          Alert.alert(
+            'Error',
+            message,
+            [{ text: 'OK', style: 'default' }],
+            { cancelable: true }
+          );
         }
       } finally {
-        setLoading(false);
-        setRefreshing(false);
+        if (isMounted) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
     };
     
     loadMovements();
-  }, [user, isSup, locId, empId, from, to, refreshing, applyFiltersAndPagination, showStatusMessage]);
+    
+    return () => {
+      isMounted = false;
+      abortController.abort();
+    };
+  }, [user, isSup, locId, empId, debouncedFrom, debouncedTo, refreshing, applyFiltersAndPagination, showStatusMessage]);
 
-  // Apply filters and pagination when tab or page changes
+  // Apply filters when dependencies change
   useEffect(() => {
     if (allMovements.length > 0) {
       applyFiltersAndPagination(allMovements);
     }
   }, [allMovements, tab, currentPage, applyFiltersAndPagination]);
 
-  // Handle refreshing the data
+  // Optimized handlers
   const onRefresh = useCallback(() => {
     setRefreshing(true);
   }, []);
 
-  // Clear all filters
   const clearFilters = useCallback(() => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    LayoutAnimation.configureNext({
+      duration: 300,
+      create: {
+        type: LayoutAnimation.Types.easeInEaseOut,
+        property: LayoutAnimation.Properties.opacity,
+      },
+      update: {
+        type: LayoutAnimation.Types.easeInEaseOut,
+      },
+    });
+    
     setLocId(null);
     setEmpId(null);
     setFrom('');
     setTo('');
     setCurrentPage(1);
+    movementsCache.current.clear(); // Clear cache
     
-    // Announce for accessibility
-    if (Platform.OS === 'ios' || Platform.OS === 'android') {
-      AccessibilityInfo.announceForAccessibility('Filtros eliminados');
-    }
-  }, []);
+    AccessibilityInfo.announceForAccessibility('Filtros eliminados');
+    showStatusMessage('Filtros eliminados', 2000, 'success');
+  }, [showStatusMessage]);
 
-  // Handle tab changes
   const handleTabChange = useCallback((newTab: string) => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    LayoutAnimation.configureNext({
+      duration: 250,
+      create: {
+        type: LayoutAnimation.Types.spring,
+        property: LayoutAnimation.Properties.scaleXY,
+        springDamping: 0.7,
+      },
+      update: {
+        type: LayoutAnimation.Types.spring,
+        springDamping: 0.7,
+      },
+    });
+    
     setTab(newTab as TabType);
-    setCurrentPage(1); // Reset to first page on tab change
+    setCurrentPage(1);
   }, []);
 
-  // Toggle new movement form
   const toggleForm = useCallback(() => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.spring);
     setShowForm(prev => !prev);
   }, []);
 
-  // Handle form finish
   const handleFormFinish = useCallback(() => {
     setShowForm(false);
     setRefreshing(true);
   }, []);
 
-  // Handle pagination
   const handlePageChange = useCallback((direction: 'prev' | 'next') => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     
     setCurrentPage(current => {
-      if (direction === 'prev') {
-        return Math.max(1, current - 1);
-      } else {
-        return Math.min(totalPages, current + 1);
-      }
-    });
-    
-    // Announce for accessibility
-    if (Platform.OS === 'ios' || Platform.OS === 'android') {
+      const newPage = direction === 'prev' 
+        ? Math.max(1, current - 1)
+        : Math.min(totalPages, current + 1);
+      
       AccessibilityInfo.announceForAccessibility(
-        `Página ${direction === 'prev' ? currentPage - 1 : currentPage + 1} de ${totalPages}`
+        `Página ${newPage} de ${totalPages}`
       );
-    }
-  }, [currentPage, totalPages]);
+      
+      return newPage;
+    });
+  }, [totalPages]);
 
-  // Handle row selection
   const handleRowPress = useCallback((item: Movement) => {
+    if (isCli) {
+            return;
+    }
+    
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.spring);
     setSelectedMovement(item);
     setShowDetailModal(true);
     
-    // Announce for accessibility
-    if (Platform.OS === 'ios' || Platform.OS === 'android') {
-      AccessibilityInfo.announceForAccessibility(
-        `Detalles del movimiento ${item.id}`
-      );
-    }
-  }, []);
+    AccessibilityInfo.announceForAccessibility(
+      `Detalles del movimiento ${item.id}`
+    );
+  }, [isCli, showStatusMessage]);
 
-  // Format detail information
+  // Enhanced detail formatting
   const formatDetailInfo = useCallback((item: Movement | null) => {
     if (!item) return null;
     
     const formatBoolean = (value: boolean) => (value ? 'Sí' : 'No');
-    const formatDate = (date: string | null) => date || '—';
+    const formatDate = (date: string | null) => {
+      if (!date) return '—';
+      try {
+        return new Date(date).toLocaleDateString('es-MX', {
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+      } catch {
+        return date;
+      }
+    };
     
     return {
       generalInfo: [
-        { label: 'ID', value: item.id },
-        { label: 'Locomotora', value: item.locomotora },
-        { label: 'Estado', value: item.estado },
-        { label: 'Prioridad', value: item.prioridad },
-        { label: 'Tipo Acción', value: item.tipoAccion },
-        { label: 'Tipo Movimiento', value: item.tipoMovimiento },
+        { label: 'ID', value: item.id, icon: 'hash' },
+        { label: 'Locomotora', value: item.locomotora, icon: 'truck' },
+        { label: 'Estado', value: item.estado, icon: 'activity' },
+        { label: 'Prioridad', value: item.prioridad, icon: 'flag' },
+        { label: 'Tipo Acción', value: item.tipoAccion, icon: 'tool' },
+        { label: 'Tipo Movimiento', value: item.tipoMovimiento, icon: 'navigation' },
       ],
       locationInfo: [
-        { label: 'Localidad', value: item.localidadNombre || '—' },
-        { label: 'Estado Localidad', value: item.localidadEstado || '—' },
-        { label: 'Vía Origen', value: item.viaOrigen },
-        { label: 'Vía Destino', value: item.viaDestino },
+        { label: 'Localidad', value: item.localidadNombre || '—', icon: 'map-pin' },
+        { label: 'Estado Localidad', value: item.localidadEstado || '—', icon: 'info' },
+        { label: 'Vía Origen', value: item.viaOrigen, icon: 'log-in' },
+        { label: 'Vía Destino', value: item.viaDestino, icon: 'log-out' },
       ],
       personnelInfo: [
-        { label: 'Cliente', value: item.clienteId },
-        { label: 'Empresa', value: item.empresaId },
-        { label: 'Supervisor', value: item.supervisorId || '—' },
-        { label: 'Coordinador', value: item.coordinadorId || '—' },
-        { label: 'Operador', value: item.operadorId || '—' },
-        { label: 'Maquinista', value: item.maquinistaId || '—' },
+        { label: 'Cliente', value: item.clienteId, icon: 'user' },
+        { label: 'Empresa', value: item.empresaId, icon: 'briefcase' },
+        { label: 'Supervisor', value: item.supervisorId || '—', icon: 'user-check' },
+        { label: 'Coordinador', value: item.coordinadorId || '—', icon: 'users' },
+        { label: 'Operador', value: item.operadorId || '—', icon: 'tool' },
+        { label: 'Maquinista', value: item.maquinistaId || '—', icon: 'user' },
       ],
       datesInfo: [
-        { label: 'Fecha Solicitud', value: formatDate(item.fechaSolicitud) },
-        { label: 'Fecha Inicio', value: formatDate(item.fechaInicio) },
-        { label: 'Fecha Fin', value: formatDate(item.fechaFin) },
-        { label: 'Nueva Fecha', value: formatDate(item.nuevaFechaPostergacion) },
+        { label: 'Fecha Solicitud', value: formatDate(item.fechaSolicitud), icon: 'calendar' },
+        { label: 'Fecha Inicio', value: formatDate(item.fechaInicio), icon: 'play' },
+        { label: 'Fecha Fin', value: formatDate(item.fechaFin), icon: 'check-circle' },
+        { label: 'Nueva Fecha', value: formatDate(item.nuevaFechaPostergacion ?? null), icon: 'clock' },
       ],
       configInfo: [
-        { label: 'Posición Cabina', value: item.posicionCabina },
-        { label: 'Posición Chimenea', value: item.posicionChimenea },
-        { label: 'Dirección Empuje', value: item.direccionEmpuje },
-        { label: 'Finalizado', value: formatBoolean(item.finalizado) },
-        { label: 'Incidente Global', value: formatBoolean(item.incidenteGlobal) },
-        { label: 'Lavado', value: formatBoolean(item.lavado) },
-        { label: 'Torno', value: formatBoolean(item.torno) },
+        { label: 'Posición Cabina', value: item.posicionCabina, icon: 'move' },
+        { label: 'Posición Chimenea', value: item.posicionChimenea, icon: 'wind' },
+        { label: 'Dirección Empuje', value: item.direccionEmpuje, icon: 'arrow-right' },
+        { label: 'Finalizado', value: formatBoolean(item.finalizado), icon: 'check' },
+        { label: 'Incidente Global', value: formatBoolean(item.incidenteGlobal), icon: 'alert-triangle' },
+        { label: 'Lavado', value: formatBoolean(item.lavado), icon: 'droplet' },
+        { label: 'Torno', value: formatBoolean(item.torno), icon: 'settings' },
       ],
     };
   }, []);
   
-  // Memorized badges for tabs
-  const tabBadges = useMemo(() => {
+  // Optimized memoized values
+  const tabBadges = useMemo<{ [key: string]: number } | undefined>(() => {
     const actualCount = allMovements.filter(m => !m.finalizado).length;
-    return actualCount > 0 ? { 'Actuales': actualCount } : {};
+    return actualCount > 0 ? { 'Actuales': actualCount } : undefined;
   }, [allMovements]);
 
-  // Render filter section
+  const renderDateRangeInfo = useMemo(() => {
+    if (loading) return null;
+    
+    const showingCurrentMonth = !debouncedFrom && !debouncedTo;
+    
+    return (
+      <Animated.View 
+        style={[
+          styles.dateRangeInfo,
+          
+        ]}
+      >
+        <View style={styles.dateRangeContent}>
+          <Feather name="calendar" size={16} color={COLORS.primary} />
+          <Text style={styles.dateRangeText}>
+            {showingCurrentMonth 
+              ? 'Mes actual' 
+              : debouncedFrom && debouncedTo 
+                ? `${debouncedFrom} - ${debouncedTo}`
+                : debouncedFrom 
+                  ? `Desde ${debouncedFrom}`
+                  : debouncedTo 
+                    ? `Hasta ${debouncedTo}`
+                    : 'Todos'
+            }
+          </Text>
+        </View>
+        {totalMovements > 0 && (
+          <View style={styles.dateRangeStats}>
+            <Text style={styles.dateRangeCount}>
+              {totalMovements} {totalMovements === 1 ? 'movimiento' : 'movimientos'}
+            </Text>
+          </View>
+        )}
+      </Animated.View>
+    );
+  }, [loading, debouncedFrom, debouncedTo, totalMovements]);
+
   const renderFilters = useMemo(() => {
     if (!isSup && !isCli) return null;
     
     return (
-      <View style={styles.filterBox}>
-        {isCli ? (
-          <View style={styles.selectWide}>
-            <Text style={styles.filterLabel}>Empresa</Text>
-            <View style={styles.selectBox}>
-              <Text style={styles.selectText}>{user?.empresa?.nombre}</Text>
+      <Animated.View 
+        style={[
+          styles.filterBox,
+         
+        ]}
+      >
+        <View style={styles.filterContent}>
+          {isCli ? (
+            <View style={styles.filterItem}>
+              <Text style={styles.filterLabel}>Empresa</Text>
+              <View style={styles.selectBoxFixed}>
+                <Feather name="briefcase" size={16} color={COLORS.primary} />
+                <Text style={styles.selectTextFixed}>{user?.empresa?.nombre}</Text>
+              </View>
             </View>
-          </View>
-        ) : (
+          ) : (
+            <Pressable 
+              style={[styles.filterItem, isOffline && styles.filterItemDisabled]} 
+              onPress={() => !isOffline && setDrop('emp')}
+              disabled={isOffline}
+            >
+              <Text style={styles.filterLabel}>Empresa</Text>
+              <View style={[styles.selectBox, isOffline && styles.selectDisabled]}>
+                <Feather name="briefcase" size={16} color={isOffline ? COLORS.disabled : COLORS.primary} />
+                <Text style={[styles.selectText, isOffline && styles.selectTextDisabled]}>
+                  {labelFor(empOpts, empId)}
+                </Text>
+                {!isOffline && (
+                  <Feather name="chevron-down" size={16} color={COLORS.textLight} />
+                )}
+              </View>
+            </Pressable>
+          )}
+
           <Pressable 
-            style={styles.selectWide} 
-            onPress={() => setDrop('emp')}
+            style={[styles.filterItem, isOffline && styles.filterItemDisabled]} 
+            onPress={() => !isOffline && setDrop('loc')}
             disabled={isOffline}
-            accessibilityRole="button"
-            accessibilityLabel="Seleccionar empresa"
-            accessibilityHint="Abre un menú para filtrar por empresa"
           >
-            <Text style={styles.filterLabel}>Empresa</Text>
-            <View style={[
-              styles.selectBox,
-              isOffline && styles.selectDisabled
-            ]}>
-              <Text style={[
-                styles.selectText,
-                isOffline && styles.selectTextDisabled
-              ]}>
-                {labelFor(empOpts, empId)}
+            <Text style={styles.filterLabel}>Localidad</Text>
+            <View style={[styles.selectBox, isOffline && styles.selectDisabled]}>
+              <Feather name="map-pin" size={16} color={isOffline ? COLORS.disabled : COLORS.primary} />
+              <Text style={[styles.selectText, isOffline && styles.selectTextDisabled]}>
+                {labelFor(locOpts, locId)}
               </Text>
               {!isOffline && (
-                <Feather name="chevron-down" size={16} color={COLORS.text} />
+                <Feather name="chevron-down" size={16} color={COLORS.textLight} />
               )}
             </View>
           </Pressable>
-        )}
 
-        <Pressable 
-          style={styles.selectWide} 
-          onPress={() => setDrop('loc')}
-          disabled={isOffline}
-          accessibilityRole="button"
-          accessibilityLabel="Seleccionar localidad"
-          accessibilityHint="Abre un menú para filtrar por localidad"
-        >
-          <Text style={styles.filterLabel}>Localidad</Text>
-          <View style={[
-            styles.selectBox,
-            isOffline && styles.selectDisabled
-          ]}>
-            <Text style={[
-              styles.selectText,
-              isOffline && styles.selectTextDisabled
-            ]}>
-              {labelFor(locOpts, locId)}
-            </Text>
-            {!isOffline && (
-              <Feather name="chevron-down" size={16} color={COLORS.text} />
-            )}
-          </View>
-        </Pressable>
+          <Pressable 
+            style={styles.filterItemDate} 
+            onPress={() => setCal('from')}
+          >
+            <Text style={styles.filterLabel}>Desde</Text>
+            <View style={styles.selectBoxDate}>
+              <Feather name="calendar" size={16} color={COLORS.primary} />
+              <Text style={styles.selectText}>{from || 'Seleccionar'}</Text>
+            </View>
+          </Pressable>
+          
+          <Pressable 
+            style={styles.filterItemDate} 
+            onPress={() => setCal('to')}
+          >
+            <Text style={styles.filterLabel}>Hasta</Text>
+            <View style={styles.selectBoxDate}>
+              <Feather name="calendar" size={16} color={COLORS.primary} />
+              <Text style={styles.selectText}>{to || 'Seleccionar'}</Text>
+            </View>
+          </Pressable>
 
-        <Pressable 
-          style={styles.selectNarrow} 
-          onPress={() => setCal('from')}
-          accessibilityRole="button"
-          accessibilityLabel="Seleccionar fecha desde"
-          accessibilityHint="Abre un calendario para filtrar desde una fecha"
-        >
-          <Text style={styles.filterLabel}>Desde</Text>
-          <View style={styles.selectBox}>
-            <Text style={styles.selectText}>{from || '----'}</Text>
-            <Feather name="calendar" size={16} color={COLORS.text} />
-          </View>
-        </Pressable>
-        
-        <Pressable 
-          style={styles.selectNarrow} 
-          onPress={() => setCal('to')}
-          accessibilityRole="button"
-          accessibilityLabel="Seleccionar fecha hasta"
-          accessibilityHint="Abre un calendario para filtrar hasta una fecha"
-        >
-          <Text style={styles.filterLabel}>Hasta</Text>
-          <View style={styles.selectBox}>
-            <Text style={styles.selectText}>{to || '----'}</Text>
-            <Feather name="calendar" size={16} color={COLORS.text} />
-          </View>
-        </Pressable>
-
-        <TouchableOpacity 
-          style={styles.clearBtn} 
-          onPress={clearFilters}
-          accessibilityRole="button"
-          accessibilityLabel="Limpiar filtros"
-        >
-          <Text style={styles.clearTxt}>Limpiar</Text>
-        </TouchableOpacity>
-      </View>
+          {(locId || empId || from || to) && (
+            <TouchableOpacity 
+              style={styles.clearBtn} 
+              onPress={clearFilters}
+              activeOpacity={0.7}
+            >
+              <Feather name="x-circle" size={16} color="#FFF" />
+              <Text style={styles.clearTxt}>Limpiar</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </Animated.View>
     );
   }, [isSup, isCli, user, empOpts, locOpts, empId, locId, from, to, labelFor, clearFilters, isOffline]);
 
-  // Render pagination controls
   const renderPagination = useMemo(() => {
     if (totalPages <= 1) return null;
     
     return (
-      <View style={styles.paginationContainer}>
+      <Animated.View 
+        style={[
+          styles.paginationContainer,
+          
+        ]}
+      >
         <TouchableOpacity 
           style={[
             styles.paginationButton,
@@ -703,13 +1031,12 @@ export default function Movimientos() {
           ]} 
           onPress={() => handlePageChange('prev')}
           disabled={currentPage === 1}
-          accessibilityRole="button"
-          accessibilityLabel="Página anterior"
+          activeOpacity={0.7}
         >
           <Feather 
             name="chevron-left" 
-            size={22} 
-            color={currentPage === 1 ? COLORS.textLight : COLORS.text} 
+            size={20} 
+            color={currentPage === 1 ? COLORS.disabled : COLORS.primary} 
           />
           <Text style={[
             styles.paginationButtonText,
@@ -719,9 +1046,46 @@ export default function Movimientos() {
           </Text>
         </TouchableOpacity>
         
-        <Text style={styles.paginationInfo}>
-          Página {currentPage} de {totalPages}
-        </Text>
+        <View style={styles.paginationInfoContainer}>
+          <View style={styles.paginationDots}>
+            {[...Array(Math.min(totalPages, 5))].map((_, i) => {
+              let pageNum = i + 1;
+              if (totalPages > 5) {
+                if (currentPage <= 3) {
+                  // Show first 5 pages
+                } else if (currentPage >= totalPages - 2) {
+                  // Show last 5 pages
+                  pageNum = totalPages - 4 + i;
+                } else {
+                  // Show current page in middle
+                  pageNum = currentPage - 2 + i;
+                }
+              }
+              
+              return (
+                <TouchableOpacity
+                  key={i}
+                  style={[
+                    styles.paginationDot,
+                    pageNum === currentPage && styles.paginationDotActive
+                  ]}
+                  onPress={() => setCurrentPage(pageNum)}
+                  disabled={pageNum === currentPage}
+                >
+                  <Text style={[
+                    styles.paginationDotText,
+                    pageNum === currentPage && styles.paginationDotTextActive
+                  ]}>
+                    {pageNum}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <Text style={styles.paginationSubInfo}>
+            {displayedMovements.length} de {totalMovements} items
+          </Text>
+        </View>
         
         <TouchableOpacity 
           style={[
@@ -730,8 +1094,7 @@ export default function Movimientos() {
           ]} 
           onPress={() => handlePageChange('next')}
           disabled={currentPage === totalPages}
-          accessibilityRole="button"
-          accessibilityLabel="Página siguiente"
+          activeOpacity={0.7}
         >
           <Text style={[
             styles.paginationButtonText,
@@ -741,15 +1104,14 @@ export default function Movimientos() {
           </Text>
           <Feather 
             name="chevron-right" 
-            size={22} 
-            color={currentPage === totalPages ? COLORS.textLight : COLORS.text} 
+            size={20} 
+            color={currentPage === totalPages ? COLORS.disabled : COLORS.primary} 
           />
         </TouchableOpacity>
-      </View>
+      </Animated.View>
     );
-  }, [currentPage, totalPages, handlePageChange]);
+  }, [currentPage, totalPages, handlePageChange, displayedMovements.length, totalMovements]);
   
-  // ListHeaderComponent for the dropdown FlatList
   const ListHeaderOption = useCallback(({ type }: { type: DropdownType }) => {
     return (
       <TouchableOpacity
@@ -759,32 +1121,35 @@ export default function Movimientos() {
           else setEmpId(null);
           setDrop(null);
           
-          // Announce selection for accessibility
           AccessibilityInfo.announceForAccessibility(
             `${type === 'loc' ? 'Localidad' : 'Empresa'}: Todas`
           );
         }}
-        accessibilityRole="button"
-        accessibilityLabel="Todas"
+        activeOpacity={0.7}
       >
+        <Feather 
+          name={type === 'loc' ? 'map' : 'grid'} 
+          size={18} 
+          color={COLORS.primary} 
+        />
         <Text style={[styles.optionTxt, styles.optionAll]}>Todas</Text>
       </TouchableOpacity>
     );
   }, []);
   
-  // Render the main interface
+  // Main render with performance optimizations
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.bg }}>
+    <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
       
       <View style={styles.container}>
-        {/* Use MovementFormWrapper to avoid hook errors */}
         {showForm ? (
           <MovementFormWrapper onFinish={handleFormFinish} />
         ) : (
           <ScrollView
-            style={{ flex: 1 }}
-            contentContainerStyle={{ flexGrow: 1 }}
+            style={styles.scrollView}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
             refreshControl={
               <RefreshControl
                 refreshing={refreshing}
@@ -796,434 +1161,596 @@ export default function Movimientos() {
               />
             }
           >
-            <Text style={styles.title}>
-              {tab === 'Actuales' ? 'Movimientos Actuales' : 'Historial de Movimientos'}
-            </Text>
-            
-            <Tabs 
-              tabs={['Actuales', 'Pasados']} 
-              activeTab={tab} 
-              onTabPress={handleTabChange}
-              badges={tabBadges}
+            <Animated.View >
+              <View style={styles.header}>
+                <Text style={styles.title}>
+                  {tab === 'Actuales' ? 'Movimientos Actuales' : 'Historial'}
+                </Text>
+          
+              </View>
+              
+              <Tabs 
+                tabs={['Actuales', 'Pasados']} 
+                activeTab={tab} 
+                onTabPress={handleTabChange}
+                badges={tabBadges}
+              />
+              
+              {renderDateRangeInfo}
+              
+              {renderFilters}
+              
+              {statusMessage && (
+                <Animated.View 
+                  style={[
+                    styles.statusContainer,
+                    statusMessage.includes('Error') || statusMessage.includes('permisos') 
+                      ? styles.statusError 
+                      : statusMessage.includes('actualizado') || statusMessage.includes('eliminado')
+                        ? styles.statusSuccess
+                        : statusMessage.includes('Sin conexión')
+                          ? styles.statusWarning
+                          : styles.statusInfo,
+                    {
+                      opacity: statusAnimation,
+                      transform: [{ 
+                        translateY: statusAnimation.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [-20, 0]
+                        })
+                      }]
+                    }
+                  ]}
+                >
+                  <Feather 
+                    name={
+                      statusMessage.includes('Error') ? 'x-circle' :
+                      statusMessage.includes('actualizado') ? 'check-circle' :
+                      statusMessage.includes('Sin conexión') ? 'wifi-off' :
+                      'info'
+                    } 
+                    size={16} 
+                    color="#FFF" 
+                  />
+                  <Text style={styles.statusText}>{statusMessage}</Text>
+                </Animated.View>
+              )}
+              
+              <View style={styles.tableWrap}>
+                {loading ? (
+                  <LoadingSkeleton />
+                ) : (
+                  <MovimientosTable 
+                    data={displayedMovements} 
+                    loading={false} 
+                    onRowPress={handleRowPress}
+                    emptyStateText={
+                      isOffline 
+                        ? "No hay datos disponibles sin conexión" 
+                        : tab === 'Actuales'
+                          ? "No hay movimientos activos"
+                          : "No hay movimientos finalizados"
+                    }
+                  />
+                )}
+              </View>
+              
+              {renderPagination}
+       
+            </Animated.View>
+             {tab === 'Actuales' && (
+                <TouchableOpacity 
+                  style={[
+                    styles.floatingBtn,
+                    isOffline && styles.floatingBtnDisabled
+                  ]} 
+                  onPress={toggleForm}
+                  disabled={isOffline}
+                  activeOpacity={0.8}
+                >
+                  <Feather name="plus" size={24} color="#FFF" />
+                </TouchableOpacity>
+              )}
+          </ScrollView>
+        )}
+        
+        {/* Modals with lazy loading */}
+        {drop !== null && (
+          <Modal 
+            transparent 
+            visible={true}
+            animationType="fade" 
+            onRequestClose={() => setDrop(null)}
+            statusBarTranslucent
+          >
+            <Pressable 
+              style={styles.backdrop} 
+              onPress={() => setDrop(null)}
             />
-            
-            {renderFilters}
-            
-            {/* Status message */}
-            {statusMessage && (
+            <SafeAreaView style={styles.modalContainer} pointerEvents="box-none">
               <Animated.View 
                 style={[
-                  styles.statusContainer,
-                  {
-                    opacity: statusAnimation,
-                    transform: [{ 
-                      translateY: statusAnimation.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [-20, 0]
-                      })
-                    }]
-                  }
+                  styles.modalWrap,
+               
                 ]}
               >
-                <Text style={styles.statusText}>{statusMessage}</Text>
-              </Animated.View>
-            )}
-            
-            <View style={styles.tableWrap}>
-              <MovimientosTable 
-                data={displayedMovements} 
-                loading={loading} 
-                onRowPress={handleRowPress}
-                emptyStateText={
-                  isOffline 
-                    ? "No hay datos disponibles sin conexión" 
-                    : tab === 'Actuales'
-                      ? "No hay movimientos activos para mostrar"
-                      : "No hay movimientos finalizados para mostrar"
-                }
-              />
-            </View>
-            
-            {/* Pagination controls */}
-            {renderPagination}
-            
-            {/* New Movement Button - only shown in 'Actuales' tab */}
-            {tab === 'Actuales' && (
-              <TouchableOpacity 
-                style={[
-                  styles.btn,
-                  isOffline && styles.btnDisabled
-                ]} 
-                onPress={toggleForm}
-                disabled={isOffline}
-                accessibilityRole="button"
-                accessibilityLabel="Nuevo movimiento"
-              >
-                <Text style={styles.btnTx}>
-                  {isOffline ? 'Sin conexión' : '+ Nuevo Movimiento'}
-                </Text>
-              </TouchableOpacity>
-            )}
-            
-            {/* Dropdown modal for location/company selection */}
-            <Modal 
-              transparent 
-              visible={drop !== null} 
-              animationType="fade" 
-              onRequestClose={() => setDrop(null)}
-              statusBarTranslucent
-            >
-              <Pressable 
-                style={styles.backdrop} 
-                onPress={() => setDrop(null)}
-                accessibilityRole="button"
-                accessibilityLabel="Cerrar selección"
-              />
-              <SafeAreaView style={styles.modalContainer} pointerEvents="box-none">
-                <View style={styles.modalWrap}>
-                  <View style={styles.modalHeader}>
+                <View style={styles.modalHeader}>
+                  <View style={styles.modalHeaderLeft}>
+                    <Feather 
+                      name={drop === 'loc' ? 'map-pin' : 'briefcase'} 
+                      size={20} 
+                      color={COLORS.primary} 
+                    />
                     <Text style={styles.modalTitle}>
-                      {drop === 'loc' ? 'Seleccionar Localidad' : 'Seleccionar Empresa'}
+                      {drop === 'loc' ? 'Localidad' : 'Empresa'}
                     </Text>
-                    <TouchableOpacity 
-                      onPress={() => setDrop(null)}
-                      accessibilityRole="button"
-                      accessibilityLabel="Cerrar"
-                    >
-                      <Feather name="x" size={24} color={COLORS.text} />
-                    </TouchableOpacity>
                   </View>
-                  
-                  <FlatList
-                    data={drop === 'loc' ? locOpts : empOpts}
-                    keyExtractor={(i) => i.id.toString()}
-                    initialNumToRender={10}
-                    maxToRenderPerBatch={20}
-                    windowSize={5}
-                    ListHeaderComponent={() => drop !== null ? <ListHeaderOption type={drop} /> : null}
-                    renderItem={({ item }) => (
-                      <TouchableOpacity
-                        style={styles.optionItem}
-                        onPress={() => {
-                          if (drop === 'loc') setLocId(item.id);
-                          else setEmpId(item.id);
-                          setDrop(null);
-                          
-                          // Announce selection for accessibility
-                          AccessibilityInfo.announceForAccessibility(
-                            `${drop === 'loc' ? 'Localidad' : 'Empresa'}: ${item.nombre}`
-                          );
-                        }}
-                        accessibilityRole="button"
-                        accessibilityLabel={item.nombre}
-                      >
-                        <Text style={styles.optionTxt}>{item.nombre}</Text>
-                      </TouchableOpacity>
-                    )}
-                    ItemSeparatorComponent={() => <View style={styles.separator} />}
-                    ListEmptyComponent={() => (
-                      <View style={styles.emptyList}>
-                        <Text style={styles.emptyListText}>
-                          No hay opciones disponibles
-                        </Text>
-                      </View>
-                    )}
-                  />
+                  <TouchableOpacity 
+                    onPress={() => setDrop(null)}
+                    style={styles.modalCloseBtn}
+                    activeOpacity={0.7}
+                  >
+                    <Feather name="x" size={24} color={COLORS.text} />
+                  </TouchableOpacity>
                 </View>
-              </SafeAreaView>
-            </Modal>
-            
-            {/* Calendar modal for date selection */}
-            <Modal 
-              transparent 
-              visible={cal !== null} 
-              animationType="fade" 
-              onRequestClose={() => setCal(null)}
-              statusBarTranslucent
-            >
-              <Pressable 
-                style={styles.backdrop} 
-                onPress={() => setCal(null)}
-                accessibilityRole="button"
-                accessibilityLabel="Cerrar calendario"
-              />
-              <SafeAreaView style={styles.modalContainer} pointerEvents="box-none">
-                <View style={styles.calendarWrapper}>
-                  <View style={styles.modalHeader}>
+                
+                <FlatList
+                  data={drop === 'loc' ? locOpts : empOpts}
+                  keyExtractor={(i) => i.id.toString()}
+                  initialNumToRender={10}
+                  maxToRenderPerBatch={20}
+                  windowSize={5}
+                  removeClippedSubviews={true}
+                  ListHeaderComponent={() => <ListHeaderOption type={drop} />}
+                  renderItem={({ item }) => (
+                    <TouchableOpacity
+                      style={styles.optionItem}
+                      onPress={() => {
+                        if (drop === 'loc') setLocId(item.id);
+                        else setEmpId(item.id);
+                        setDrop(null);
+                        
+                        AccessibilityInfo.announceForAccessibility(
+                          `${drop === 'loc' ? 'Localidad' : 'Empresa'}: ${item.nombre}`
+                        );
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Feather 
+                        name="check" 
+                        size={18} 
+                        color={
+                          (drop === 'loc' && locId === item.id) || 
+                          (drop === 'emp' && empId === item.id) 
+                            ? COLORS.primary 
+                            : 'transparent'
+                        } 
+                      />
+                      <Text style={styles.optionTxt}>{item.nombre}</Text>
+                    </TouchableOpacity>
+                  )}
+                  ItemSeparatorComponent={() => <View style={styles.separator} />}
+                  ListEmptyComponent={() => (
+                    <View style={styles.emptyList}>
+                      <Feather name="inbox" size={40} color={COLORS.disabled} />
+                      <Text style={styles.emptyListText}>
+                        No hay opciones disponibles
+                      </Text>
+                    </View>
+                  )}
+                />
+              </Animated.View>
+            </SafeAreaView>
+          </Modal>
+        )}
+        
+        {cal !== null && (
+          <Modal 
+            transparent 
+            visible={true}
+            animationType="fade" 
+            onRequestClose={() => setCal(null)}
+            statusBarTranslucent
+          >
+            <Pressable 
+              style={styles.backdrop} 
+              onPress={() => setCal(null)}
+            />
+            <SafeAreaView style={styles.modalContainer} pointerEvents="box-none">
+              <Animated.View 
+                style={[
+                  styles.calendarWrapper,
+              
+                ]}
+              >
+                <View style={styles.modalHeader}>
+                  <View style={styles.modalHeaderLeft}>
+                    <Feather name="calendar" size={20} color={COLORS.primary} />
                     <Text style={styles.modalTitle}>
                       {cal === 'from' ? 'Fecha Desde' : 'Fecha Hasta'}
                     </Text>
-                    <TouchableOpacity 
-                      onPress={() => setCal(null)}
-                      accessibilityRole="button"
-                      accessibilityLabel="Cerrar"
-                    >
-                      <Feather name="x" size={24} color={COLORS.text} />
-                    </TouchableOpacity>
                   </View>
-                  
-                  <Calendar
-                    initialDate={cal === 'from' ? from || todayISO() : to || todayISO()}
-                    onDayPress={(d: DateData) => {
-                      cal === 'from' ? setFrom(d.dateString) : setTo(d.dateString);
-                      setCal(null);
-                      
-                      // Announce selection for accessibility
-                      AccessibilityInfo.announceForAccessibility(
-                        `${cal === 'from' ? 'Fecha desde' : 'Fecha hasta'}: ${d.dateString}`
-                      );
-                    }}
-                    markedDates={{
-                      [cal === 'from' ? from || todayISO() : to || todayISO()]: { selected: true },
-                    }}
-                    theme={{
-                      selectedDayBackgroundColor: COLORS.primary,
-                      todayTextColor: COLORS.primary,
-                      arrowColor: COLORS.primary,
-                      textDayFontSize: 16,
-                      textMonthFontSize: 16,
-                      textDayHeaderFontSize: 14,
-                    }}
-                    enableSwipeMonths={true}
-                  />
-                  
-                  {(cal === 'from' && from) || (cal === 'to' && to) ? (
-                    <TouchableOpacity 
-                      style={styles.clearDateBtn}
-                      onPress={() => {
-                        cal === 'from' ? setFrom('') : setTo('');
-                        setCal(null);
-                        
-                        // Announce for accessibility
-                        AccessibilityInfo.announceForAccessibility(
-                          `${cal === 'from' ? 'Fecha desde' : 'Fecha hasta'} eliminada`
-                        );
-                      }}
-                      accessibilityRole="button"
-                      accessibilityLabel="Eliminar fecha"
-                    >
-                      <Feather name="trash-2" size={16} color={COLORS.red} />
-                      <Text style={styles.clearDateText}>Eliminar fecha</Text>
-                    </TouchableOpacity>
-                  ) : null}
-                </View>
-              </SafeAreaView>
-            </Modal>
-            
-            {/* Detail modal */}
-            <Modal
-              transparent
-              visible={showDetailModal}
-              animationType="fade"
-              onRequestClose={() => setShowDetailModal(false)}
-              statusBarTranslucent
-            >
-              <Pressable 
-                style={styles.backdrop} 
-                onPress={() => setShowDetailModal(false)}
-                accessibilityRole="button"
-                accessibilityLabel="Cerrar detalles"
-              />
-              <SafeAreaView style={styles.modalContainer} pointerEvents="box-none">
-                <View style={styles.detailModalWrap}>
-                  <View style={styles.modalHeader}>
-                    <Text style={styles.modalTitle}>
-                      Detalles del Movimiento #{selectedMovement?.id}
-                    </Text>
-                    <TouchableOpacity 
-                      onPress={() => setShowDetailModal(false)}
-                      accessibilityRole="button"
-                      accessibilityLabel="Cerrar"
-                    >
-                      <Feather name="x" size={24} color={COLORS.text} />
-                    </TouchableOpacity>
-                  </View>
-                  
-                  {selectedMovement && (
-                    <ScrollView 
-                      style={styles.detailScrollView}
-                      contentContainerStyle={styles.detailContentContainer}
-                    >
-                      {/* Instrucciones Section */}
-                      {selectedMovement.instrucciones && (
-                        <View style={styles.detailSection}>
-                          <Text style={styles.detailSectionTitle}>Instrucciones</Text>
-                          <View style={styles.instructionsBox}>
-                            <Text style={styles.instructionsText}>
-                              {selectedMovement.instrucciones}
-                            </Text>
-                          </View>
-                        </View>
-                      )}
-                      
-                      {/* Sections from formatted info */}
-                      {formatDetailInfo(selectedMovement) && (
-                        <>
-                          {/* General Info Section */}
-                          <View style={styles.detailSection}>
-                            <Text style={styles.detailSectionTitle}>Información General</Text>
-                            <View style={styles.detailGrid}>
-                              {formatDetailInfo(selectedMovement)!.generalInfo.map((item, index) => (
-                                <View key={index} style={styles.detailItem}>
-                                  <Text style={styles.detailLabel}>{item.label}:</Text>
-                                  <Text style={styles.detailValue}>{item.value}</Text>
-                                </View>
-                              ))}
-                            </View>
-                          </View>
-                          
-                          {/* Location Info Section */}
-                          <View style={styles.detailSection}>
-                            <Text style={styles.detailSectionTitle}>Ubicación</Text>
-                            <View style={styles.detailGrid}>
-                              {formatDetailInfo(selectedMovement)!.locationInfo.map((item, index) => (
-                                <View key={index} style={styles.detailItem}>
-                                  <Text style={styles.detailLabel}>{item.label}:</Text>
-                                  <Text style={styles.detailValue}>{item.value}</Text>
-                                </View>
-                              ))}
-                            </View>
-                          </View>
-                          
-                          {/* Personnel Info Section */}
-                          <View style={styles.detailSection}>
-                            <Text style={styles.detailSectionTitle}>Personal</Text>
-                            <View style={styles.detailGrid}>
-                              {formatDetailInfo(selectedMovement)!.personnelInfo.map((item, index) => (
-                                <View key={index} style={styles.detailItem}>
-                                  <Text style={styles.detailLabel}>{item.label}:</Text>
-                                  <Text style={styles.detailValue}>{item.value}</Text>
-                                </View>
-                              ))}
-                            </View>
-                          </View>
-                          
-                          {/* Dates Info Section */}
-                          <View style={styles.detailSection}>
-                            <Text style={styles.detailSectionTitle}>Fechas</Text>
-                            <View style={styles.detailGrid}>
-                              {formatDetailInfo(selectedMovement)!.datesInfo.map((item, index) => (
-                                <View key={index} style={styles.detailItem}>
-                                  <Text style={styles.detailLabel}>{item.label}:</Text>
-                                  <Text style={styles.detailValue}>{item.value}</Text>
-                                </View>
-                              ))}
-                            </View>
-                          </View>
-                          
-                          {/* Configuration Info Section */}
-                          <View style={styles.detailSection}>
-                            <Text style={styles.detailSectionTitle}>Configuración</Text>
-                            <View style={styles.detailGrid}>
-                              {formatDetailInfo(selectedMovement)!.configInfo.map((item, index) => (
-                                <View key={index} style={styles.detailItem}>
-                                  <Text style={styles.detailLabel}>{item.label}:</Text>
-                                  <Text style={styles.detailValue}>{item.value}</Text>
-                                </View>
-                              ))}
-                            </View>
-                          </View>
-                        </>
-                      )}
-                      
-                      {/* Comentario Section */}
-                      {selectedMovement.comentarioPostergacion && (
-                        <View style={styles.detailSection}>
-                          <Text style={styles.detailSectionTitle}>Comentario de Postergación</Text>
-                          <View style={styles.commentBox}>
-                            <Text style={styles.commentText}>
-                              {selectedMovement.comentarioPostergacion}
-                            </Text>
-                          </View>
-                        </View>
-                      )}
-                    </ScrollView>
-                  )}
-                  
                   <TouchableOpacity 
-                    style={styles.closeButton}
-                    onPress={() => setShowDetailModal(false)}
-                    accessibilityRole="button"
-                    accessibilityLabel="Cerrar detalles"
+                    onPress={() => setCal(null)}
+                    style={styles.modalCloseBtn}
+                    activeOpacity={0.7}
                   >
-                    <Text style={styles.closeButtonText}>Cerrar</Text>
+                    <Feather name="x" size={24} color={COLORS.text} />
                   </TouchableOpacity>
                 </View>
-              </SafeAreaView>
-            </Modal>
-          </ScrollView>
+                
+                <Calendar
+                  initialDate={cal === 'from' ? from || todayISO() : to || todayISO()}
+                  onDayPress={(d: DateData) => {
+                    cal === 'from' ? setFrom(d.dateString) : setTo(d.dateString);
+                    setCal(null);
+                    
+                    AccessibilityInfo.announceForAccessibility(
+                      `${cal === 'from' ? 'Fecha desde' : 'Fecha hasta'}: ${d.dateString}`
+                    );
+                  }}
+                  markedDates={{
+                    [cal === 'from' ? from || todayISO() : to || todayISO()]: { 
+                      selected: true,
+                      selectedColor: COLORS.primary
+                    },
+                  }}
+                  theme={{
+                    backgroundColor: COLORS.card,
+                    calendarBackground: COLORS.card,
+                    textSectionTitleColor: COLORS.textLight,
+                    selectedDayBackgroundColor: COLORS.primary,
+                    selectedDayTextColor: '#FFF',
+                    todayTextColor: COLORS.primary,
+                    dayTextColor: COLORS.text,
+                    textDisabledColor: COLORS.disabled,
+                    dotColor: COLORS.primary,
+                    selectedDotColor: '#FFF',
+                    arrowColor: COLORS.primary,
+                    monthTextColor: COLORS.text,
+                    textDayFontSize: 16,
+                    textMonthFontSize: 18,
+                    textDayHeaderFontSize: 14,
+                    textDayFontWeight: '400',
+                    textMonthFontWeight: '600',
+                    textDayHeaderFontWeight: '500',
+                  }}
+                  enableSwipeMonths={true}
+                />
+                
+                {(cal === 'from' && from) || (cal === 'to' && to) ? (
+                  <TouchableOpacity 
+                    style={styles.clearDateBtn}
+                    onPress={() => {
+                      cal === 'from' ? setFrom('') : setTo('');
+                      setCal(null);
+                      
+                      AccessibilityInfo.announceForAccessibility(
+                        `${cal === 'from' ? 'Fecha desde' : 'Fecha hasta'} eliminada`
+                      );
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Feather name="trash-2" size={16} color={COLORS.red} />
+                    <Text style={styles.clearDateText}>Eliminar fecha</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </Animated.View>
+            </SafeAreaView>
+          </Modal>
+        )}
+        
+        {!isCli && showDetailModal && selectedMovement && (
+          <Modal
+            transparent
+            visible={true}
+            animationType="slide"
+            onRequestClose={() => setShowDetailModal(false)}
+            statusBarTranslucent
+          >
+            <Pressable 
+              style={styles.backdrop} 
+              onPress={() => setShowDetailModal(false)}
+            />
+            <SafeAreaView style={styles.modalContainerDetail} pointerEvents="box-none">
+              <Animated.View 
+                style={[
+                  styles.detailModalWrap,
+                
+                ]}
+              >
+                <View style={styles.modalHeader}>
+                  <View style={styles.modalHeaderLeft}>
+                    <Feather name="file-text" size={20} color={COLORS.primary} />
+                    <Text style={styles.modalTitle}>
+                      Movimiento #{selectedMovement.id}
+                    </Text>
+                  </View>
+                  <TouchableOpacity 
+                    onPress={() => setShowDetailModal(false)}
+                    style={styles.modalCloseBtn}
+                    activeOpacity={0.7}
+                  >
+                    <Feather name="x" size={24} color={COLORS.text} />
+                  </TouchableOpacity>
+                </View>
+                
+                <ScrollView 
+                  style={styles.detailScrollView}
+                  contentContainerStyle={styles.detailContentContainer}
+                  showsVerticalScrollIndicator={false}
+                >
+                  {selectedMovement.prioridad === 'ALTA' && (
+                    <View style={styles.priorityBadge}>
+                      <Feather name="alert-circle" size={16} color="#FFF" />
+                      <Text style={styles.priorityBadgeText}>PRIORIDAD ALTA</Text>
+                    </View>
+                  )}
+                  
+                  <StatusBadge status={selectedMovement.estado} />
+                  
+                  {selectedMovement.instrucciones && (
+                    <View style={styles.detailSection}>
+                      <View style={styles.detailSectionHeader}>
+                        <Feather name="file-text" size={18} color={COLORS.primary} />
+                        <Text style={styles.detailSectionTitle}>Instrucciones</Text>
+                      </View>
+                      <View style={styles.instructionsBox}>
+                        <Text style={styles.instructionsText}>
+                          {selectedMovement.instrucciones}
+                        </Text>
+                      </View>
+                    </View>
+                  )}
+                  
+                  {formatDetailInfo(selectedMovement) && (
+                    <>
+                      {Object.entries({
+                        'Información General': formatDetailInfo(selectedMovement)!.generalInfo,
+                        'Ubicación': formatDetailInfo(selectedMovement)!.locationInfo,
+                        'Personal': formatDetailInfo(selectedMovement)!.personnelInfo,
+                        'Fechas': formatDetailInfo(selectedMovement)!.datesInfo,
+                        'Configuración': formatDetailInfo(selectedMovement)!.configInfo,
+                      }).map(([title, items]) => (
+                        <View key={title} style={styles.detailSection}>
+                          <View style={styles.detailSectionHeader}>
+                            <Feather 
+                              name={
+                                title === 'Información General' ? 'info' :
+                                title === 'Ubicación' ? 'map' :
+                                title === 'Personal' ? 'users' :
+                                title === 'Fechas' ? 'calendar' :
+                                'settings'
+                              } 
+                              size={18} 
+                              color={COLORS.primary} 
+                            />
+                            <Text style={styles.detailSectionTitle}>{title}</Text>
+                          </View>
+                          <View style={styles.detailGrid}>
+                            {items.map((item: any, index: number) => (
+                              <View key={index} style={styles.detailItem}>
+                                <View style={styles.detailItemHeader}>
+                                  <Feather 
+                                    name={item.icon} 
+                                    size={14} 
+                                    color={COLORS.textLight} 
+                                  />
+                                  <Text style={styles.detailLabel}>{item.label}</Text>
+                                </View>
+                                <Text style={styles.detailValue}>{item.value}</Text>
+                              </View>
+                            ))}
+                          </View>
+                        </View>
+                      ))}
+                    </>
+                  )}
+                  
+                  {selectedMovement.comentarioPostergacion && (
+                    <View style={styles.detailSection}>
+                      <View style={styles.detailSectionHeader}>
+                        <Feather name="message-circle" size={18} color={COLORS.warning} />
+                        <Text style={styles.detailSectionTitle}>Comentario de Postergación</Text>
+                      </View>
+                      <View style={styles.commentBox}>
+                        <Text style={styles.commentText}>
+                          {selectedMovement.comentarioPostergacion}
+                        </Text>
+                      </View>
+                    </View>
+                  )}
+                </ScrollView>
+              </Animated.View>
+            </SafeAreaView>
+          </Modal>
         )}
       </View>
     </SafeAreaView>
   );
 }
 
+// Enhanced styles with modern design
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+  },
   container: { 
-    flex: 1, 
-    padding: 20, 
-    backgroundColor: COLORS.bg 
+    flex: 1,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 100,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+    marginTop: 16,
   },
   title: { 
-    fontSize: 24, 
+    fontSize: 28, 
     fontWeight: '700', 
-    color: COLORS.primary, 
-    textAlign: 'center', 
-    marginBottom: 16 
+    color: COLORS.text,
+    letterSpacing: -0.5,
   },
-  statusContainer: {
-    backgroundColor: COLORS.primaryLight,
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 12,
+  userBadge: {
+    flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: COLORS.card,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
-  statusText: {
-    color: COLORS.card,
+  userBadgeText: {
+    fontSize: 12,
+    color: COLORS.primary,
     fontWeight: '600',
+    marginLeft: 4,
   },
-  filterBox: {
+  dateRangeInfo: {
     backgroundColor: COLORS.card,
     borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'flex-end',
+    padding: 12,
+    marginBottom: 16,
     borderWidth: 1,
     borderColor: COLORS.border,
     elevation: 2,
     shadowColor: COLORS.shadow,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 1,
     shadowRadius: 4,
   },
-  filterLabel: { 
-    fontSize: 13, 
-    color: COLORS.textLight, 
-    marginBottom: 4,
+  dateRangeContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  dateRangeText: {
+    fontSize: 14,
+    color: COLORS.text,
     fontWeight: '500',
+    marginLeft: 8,
   },
-  selectWide: { 
-    width: 130, 
-    marginRight: 12, 
-    marginBottom: 10 
+  dateRangeStats: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
   },
-  selectNarrow: { 
-    width: 100, 
-    marginRight: 12, 
-    marginBottom: 10 
+  dateRangeCount: {
+    fontSize: 13,
+    color: COLORS.textLight,
+    fontWeight: '600',
   },
-  selectBox: {
+  statusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 16,
+    elevation: 3,
+    shadowColor: COLORS.shadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 1,
+    shadowRadius: 4,
+  },
+  statusInfo: {
+    backgroundColor: COLORS.info,
+  },
+  statusSuccess: {
+    backgroundColor: COLORS.success,
+  },
+  statusError: {
+    backgroundColor: COLORS.error,
+  },
+  statusWarning: {
+    backgroundColor: COLORS.warning,
+  },
+  statusText: {
+    color: '#FFF',
+    fontWeight: '600',
+    fontSize: 14,
+    marginLeft: 8,
+    flex: 1,
+  },
+  filterBox: {
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+    marginBottom: 16,
     borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: 8,
-    paddingVertical: 8,
+    elevation: 3,
+    shadowColor: COLORS.shadow,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 1,
+    shadowRadius: 6,
+    overflow: 'hidden',
+  },
+  filterContent: {
+    padding: 16,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'flex-end',
+    gap: 12,
+  },
+  filterItem: {
+    flex: 1,
+    minWidth: 140,
+    marginBottom: 4,
+  },
+  filterItemDate: {
+    minWidth: 110,
+    marginBottom: 4,
+  },
+  filterItemDisabled: {
+    opacity: 0.6,
+  },
+  filterLabel: { 
+    fontSize: 12, 
+    color: COLORS.textLight, 
+    marginBottom: 6,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  selectBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    borderRadius: 10,
+    paddingVertical: 10,
     paddingHorizontal: 12,
     backgroundColor: COLORS.bg,
+    gap: 8,
+  },
+  selectBoxFixed: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: COLORS.bgDark,
+    gap: 8,
+  },
+  selectBoxDate: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: COLORS.bg,
+    gap: 8,
   },
   selectDisabled: {
     backgroundColor: COLORS.bgDark,
@@ -1233,6 +1760,12 @@ const styles = StyleSheet.create({
     fontSize: 14, 
     color: COLORS.text,
     flex: 1,
+    fontWeight: '500',
+  },
+  selectTextFixed: { 
+    fontSize: 14, 
+    color: COLORS.text,
+    fontWeight: '600',
   },
   selectTextDisabled: {
     color: COLORS.textLight,
@@ -1240,12 +1773,16 @@ const styles = StyleSheet.create({
   clearBtn: {
     backgroundColor: COLORS.red,
     paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 8,
-    marginLeft: 'auto',
-    marginBottom: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
+    elevation: 2,
+    shadowColor: COLORS.redDark,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
   },
   clearTxt: { 
     color: '#FFF', 
@@ -1255,31 +1792,48 @@ const styles = StyleSheet.create({
   tableWrap: { 
     flex: 1, 
     marginTop: 8,
-    borderRadius: 8,
+    borderRadius: 12,
     overflow: 'hidden',
+    backgroundColor: COLORS.card,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    elevation: 2,
+    shadowColor: COLORS.shadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 1,
+    shadowRadius: 4,
   },
   paginationContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginTop: 16,
-    paddingVertical: 8,
-    backgroundColor: COLORS.card,
-    borderRadius: 8,
+    paddingVertical: 12,
     paddingHorizontal: 16,
+    backgroundColor: COLORS.card,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: COLORS.border,
+    elevation: 2,
+    shadowColor: COLORS.shadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 1,
+    shadowRadius: 4,
   },
   paginationButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: COLORS.bg,
+    gap: 4,
   },
   paginationButtonDisabled: {
     opacity: 0.5,
+    backgroundColor: COLORS.bgDark,
   },
   paginationButtonText: {
-    marginHorizontal: 4,
     fontSize: 14,
     fontWeight: '600',
     color: COLORS.primary,
@@ -1287,72 +1841,129 @@ const styles = StyleSheet.create({
   paginationButtonTextDisabled: {
     color: COLORS.textLight,
   },
-  paginationInfo: {
-    fontSize: 14,
-    fontWeight: '500',
+  paginationInfoContainer: {
+    alignItems: 'center',
+  },
+  paginationDots: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  paginationDot: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: COLORS.bg,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  paginationDotActive: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  paginationDotText: {
+    fontSize: 12,
+    fontWeight: '600',
     color: COLORS.text,
   },
-  btn: {
+  paginationDotTextActive: {
+    color: '#FFF',
+  },
+  paginationSubInfo: {
+    fontSize: 11,
+    color: COLORS.textLight,
+    marginTop: 4,
+  },
+  floatingBtn: {
+    position: 'absolute',
+    bottom: 24,
+    right: 24,
+    width: 56,
+    height: 56,
     backgroundColor: COLORS.primary,
-    paddingVertical: 16,
-    borderRadius: 10,
+    borderRadius: 28,
+    justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 16,
-    elevation: 2,
-    shadowColor: COLORS.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
+    elevation: 8,
+    shadowColor: COLORS.primaryDark,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
   },
-  btnDisabled: {
+  floatingBtnDisabled: {
     backgroundColor: COLORS.disabled,
-  },
-  btnTx: { 
-    color: '#FFF', 
-    fontSize: 16, 
-    fontWeight: '600' 
   },
   backdrop: { 
     ...StyleSheet.absoluteFillObject, 
-    backgroundColor: COLORS.backdrop 
+    backgroundColor: COLORS.backdrop,
   },
   modalContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    marginHorizontal: 16,
+    padding: 20,
+  },
+  modalContainerDetail: {
+    flex: 1,
+    justifyContent: 'flex-end',
   },
   modalWrap: {
-    width: '90%',
+    width: '100%',
+    maxWidth: 400,
     backgroundColor: COLORS.card,
-    borderRadius: 12,
-    maxHeight: '60%',
+    borderRadius: 16,
+    maxHeight: '80%',
     overflow: 'hidden',
-    elevation: 5,
-    shadowColor: COLORS.shadow,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+    elevation: 10,
+    shadowColor: COLORS.shadowDark,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 1,
+    shadowRadius: 12,
+  },
+  detailModalWrap: {
+    backgroundColor: COLORS.card,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '90%',
+    elevation: 10,
+    shadowColor: COLORS.shadowDark,
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 1,
+    shadowRadius: 12,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
+    padding: 20,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
+    backgroundColor: COLORS.bg,
+  },
+  modalHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   modalTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: COLORS.textDark,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  modalCloseBtn: {
+    padding: 4,
   },
   optionItem: { 
-    padding: 16, 
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    gap: 12,
   },
   optionTxt: { 
     fontSize: 16, 
-    color: COLORS.text 
+    color: COLORS.text,
+    flex: 1,
   },
   optionAll: { 
     fontWeight: '700',
@@ -1364,23 +1975,25 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
   },
   emptyList: {
-    padding: 20,
+    padding: 40,
     alignItems: 'center',
+    gap: 12,
   },
   emptyListText: {
     color: COLORS.textLight,
-    fontStyle: 'italic',
+    fontSize: 14,
   },
   calendarWrapper: {
-    width: '90%',
+    width: '100%',
+    maxWidth: 400,
     backgroundColor: COLORS.card,
-    borderRadius: 12,
+    borderRadius: 16,
     overflow: 'hidden',
-    elevation: 5,
-    shadowColor: COLORS.shadow,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+    elevation: 10,
+    shadowColor: COLORS.shadowDark,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 1,
+    shadowRadius: 12,
   },
   clearDateBtn: {
     flexDirection: 'row',
@@ -1389,66 +2002,123 @@ const styles = StyleSheet.create({
     padding: 12,
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
+    gap: 8,
   },
   clearDateText: {
     color: COLORS.red,
-    fontWeight: '500',
-    marginLeft: 8,
-  },
-  detailModalWrap: {
-    width: '90%',
-    backgroundColor: COLORS.card,
-    borderRadius: 12,
-    maxHeight: '80%',
-    overflow: 'hidden',
-    elevation: 5,
-    shadowColor: COLORS.shadow,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+    fontWeight: '600',
+    fontSize: 14,
   },
   detailScrollView: {
-    maxHeight: '70%',
+    maxHeight: '85%',
   },
   detailContentContainer: {
-    padding: 16,
+    padding: 20,
+  },
+  priorityBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.red,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+    alignSelf: 'flex-start',
+    gap: 6,
+    elevation: 2,
+    shadowColor: COLORS.redDark,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
+  priorityBadgeText: {
+    color: '#FFF',
+    fontWeight: '700',
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  statusBadge: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+    marginBottom: 16,
+  },
+  statusBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFF',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  statusSolicitado: {
+    backgroundColor: COLORS.blue,
+  },
+  statusEnProceso: {
+    backgroundColor: COLORS.warning,
+  },
+  statusConcluido: {
+    backgroundColor: COLORS.success,
+  },
+  statusDetenido: {
+    backgroundColor: COLORS.red,
+  },
+  statusDefault: {
+    backgroundColor: COLORS.textLight,
   },
   detailSection: {
-    marginBottom: 20,
+    marginBottom: 24,
+  },
+  detailSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
   },
   detailSectionTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: COLORS.primary,
-    marginBottom: 12,
-    paddingBottom: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    color: COLORS.text,
+    flex: 1,
   },
   detailGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    gap: 12,
   },
   detailItem: {
-    width: '50%',
-    paddingVertical: 6,
-    paddingRight: 12,
+    width: '47%',
+    backgroundColor: COLORS.bg,
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  detailItemHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
   },
   detailLabel: {
-    fontSize: 13,
+    fontSize: 12,
     color: COLORS.textLight,
-    fontWeight: '500',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
   },
   detailValue: {
     fontSize: 15,
-    color: COLORS.textDark,
+    color: COLORS.text,
+    fontWeight: '600',
     marginTop: 2,
   },
   instructionsBox: {
-    backgroundColor: COLORS.bgDark,
-    padding: 12,
-    borderRadius: 8,
-    borderLeftWidth: 3,
+    backgroundColor: COLORS.bg,
+    padding: 16,
+    borderRadius: 10,
+    borderLeftWidth: 4,
     borderLeftColor: COLORS.primary,
   },
   instructionsText: {
@@ -1457,11 +2127,11 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   commentBox: {
-    backgroundColor: COLORS.bgDark,
-    padding: 12,
-    borderRadius: 8,
-    borderLeftWidth: 3,
-    borderLeftColor: COLORS.yellow,
+    backgroundColor: COLORS.bg,
+    padding: 16,
+    borderRadius: 10,
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.warning,
   },
   commentText: {
     fontSize: 14,
@@ -1469,17 +2139,20 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     lineHeight: 20,
   },
-  closeButton: {
-    alignSelf: 'center',
-    backgroundColor: COLORS.primary,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    margin: 16,
+  // Skeleton loader styles
+  skeletonContainer: {
+    padding: 16,
   },
-  closeButtonText: {
-    color: COLORS.card,
-    fontWeight: '600',
-    fontSize: 16,
+  skeletonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+    gap: 8,
+  },
+  skeletonCell: {
+    height: 40,
+    backgroundColor: COLORS.bgDark,
+    borderRadius: 8,
+    flex: 1,
   },
 });

@@ -14,9 +14,10 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useFocusEffect } from '@react-navigation/native';
 import Menu from '../../../Component/Menu/Menu';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { RootStackParamList } from '../../../navigation/Navigation'; // Manteniendo la ruta original
+import { RootStackParamList } from '../../../navigation/Navigation';
 
 // Tipos
 interface User {
@@ -66,7 +67,7 @@ const COLORS = {
   WHITE: '#FFFFFF'
 };
 
-const API_BASE_URL = 'http://10.10.10.6:3000';
+const API_BASE_URL = 'http://31.97.13.182:3000';
 
 const Maquinista: React.FC<MaquinistaProps> = ({ navigation }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -75,6 +76,31 @@ const Maquinista: React.FC<MaquinistaProps> = ({ navigation }) => {
   const [fetching, setFetching] = useState(false);
   const [menuVisible, setMenuVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
+  // ← FUNCIÓN PARA VERIFICAR SI HAY MOVIMIENTO ACTIVO
+  const checkActiveMovement = useCallback(async () => {
+    try {
+      const timeStr = await AsyncStorage.getItem('movimiento_timer');
+      if (timeStr) {
+        const timeData = JSON.parse(timeStr);
+        console.log('Movimiento activo encontrado:', timeData);
+        
+        // Si hay un movimiento activo, redirigir inmediatamente a MovimientoP
+        if (timeData.isRunning && timeData.movimientoId && timeData.locomotora) {
+          console.log('Redirigiendo a movimiento activo...');
+          navigation.replace('MovimientoP', {
+            movimientoId: timeData.movimientoId,
+            locomotora: timeData.locomotora,
+          });
+          return true; // Indica que se encontró movimiento activo
+        }
+      }
+      return false; // No hay movimiento activo
+    } catch (error) {
+      console.error('Error verificando movimiento activo:', error);
+      return false;
+    }
+  }, [navigation]);
 
   // Obtener siguiente movimiento
   const fetchNextMovement = useCallback(async (userData: User) => {
@@ -89,6 +115,7 @@ const Maquinista: React.FC<MaquinistaProps> = ({ navigation }) => {
       const data = await res.json();
       setMovimiento(data.movimiento ? transformMovementData(data) : null);
     } catch (err) {
+      console.log('Error fetching movement:', err);
       setMovimiento(null);
     } finally {
       setFetching(false);
@@ -97,6 +124,13 @@ const Maquinista: React.FC<MaquinistaProps> = ({ navigation }) => {
   
   const loadInitialData = useCallback(async () => {
     try {
+      // ← PRIMERO VERIFICAR SI HAY MOVIMIENTO ACTIVO
+      const hasActiveMovement = await checkActiveMovement();
+      if (hasActiveMovement) {
+        // Si encontró movimiento activo, no continuar cargando esta pantalla
+        return;
+      }
+
       const [userStr, token] = await Promise.all([
         AsyncStorage.getItem('user'),
         AsyncStorage.getItem('token')
@@ -116,7 +150,21 @@ const Maquinista: React.FC<MaquinistaProps> = ({ navigation }) => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [fetchNextMovement]);
+  }, [fetchNextMovement, checkActiveMovement]);
+
+  // ← VERIFICAR MOVIMIENTO ACTIVO CADA VEZ QUE LA PANTALLA GANA FOCO
+  useFocusEffect(
+    useCallback(() => {
+      // Verificar primero si hay movimiento activo
+      checkActiveMovement().then((hasActive) => {
+        // Solo refrescar si no hay movimiento activo y ya tenemos datos de usuario
+        if (!hasActive && user && !loading) {
+          console.log('Pantalla Maquinista enfocada - refrescando movimientos');
+          fetchNextMovement(user);
+        }
+      });
+    }, [user, loading, fetchNextMovement, checkActiveMovement])
+  );
   
   const transformMovementData = (data: any): Movimiento => {
     const m = data.movimiento;
@@ -156,7 +204,6 @@ const Maquinista: React.FC<MaquinistaProps> = ({ navigation }) => {
       const userStr = await AsyncStorage.getItem('user');
       const token = await AsyncStorage.getItem('token');
       
-   
       if (!userStr) throw new Error('Usuario no encontrado');
   
       const parsed = JSON.parse(userStr);
@@ -179,16 +226,27 @@ const Maquinista: React.FC<MaquinistaProps> = ({ navigation }) => {
       if (!response.ok) {
         throw new Error('No se pudo iniciar el movimiento');
       }
-  
-      const result = await response.json();
-  
-      navigation.navigate('MovimientoP', {
+
+      // ← GUARDAR INFORMACIÓN DEL MOVIMIENTO ANTES DE NAVEGAR
+      try {
+        await AsyncStorage.setItem(
+          `movimiento_info_${movimiento.id}`,
+          JSON.stringify(movimiento)
+        );
+        console.log('Información del movimiento guardada');
+      } catch (saveError) {
+        console.error('Error guardando info del movimiento:', saveError);
+      }
+
+      // ← USAR replace PARA EVITAR NAVEGACIÓN HACIA ATRÁS
+      navigation.replace('MovimientoP', {
         movimientoId: movimiento.id.toString(),
         locomotora: movimiento.locomotora.toString(),
       });
   
     } catch (error) {
-       Alert.alert("Error", "No se pudo iniciar el movimiento. Intenta nuevamente.");
+      console.error('Error starting movement:', error);
+      Alert.alert("Error", "No se pudo iniciar el movimiento. Intenta nuevamente.");
     }
   }, [movimiento, user, navigation]);
   
@@ -217,7 +275,7 @@ const Maquinista: React.FC<MaquinistaProps> = ({ navigation }) => {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={COLORS.PRIMARY_RED} />
-        <Text style={styles.loadingText}>Cargando...</Text>
+        <Text style={styles.loadingText}>Verificando movimientos activos...</Text>
       </View>
     );
   }
@@ -363,7 +421,7 @@ const EmptyState: React.FC<{ onRefresh: () => void }> = ({ onRefresh }) => (
   </View>
 );
 
-// Estilos
+// Estilos (mantener los mismos)
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -480,41 +538,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     maxWidth: '50%',
     textAlign: 'right',
-  },
-  optionsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  optionItem: {
-    flexDirection: 'column',
-    alignItems: 'center',
-    width: '48%',
-    backgroundColor: COLORS.NEUTRAL_100,
-    padding: 12,
-    borderRadius: 8,
-  },
-  optionLabel: {
-    fontSize: 14,
-    color: COLORS.NEUTRAL_700,
-    marginBottom: 8,
-  },
-  optionBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 16,
-  },
-  badgeActive: {
-    backgroundColor: COLORS.SUCCESS,
-  },
-  badgeInactive: {
-    backgroundColor: COLORS.ERROR,
-  },
-  badgeText: {
-    color: COLORS.WHITE,
-    fontSize: 12,
-    fontWeight: 'bold',
   },
   dateContainer: {
     flexDirection: 'row',

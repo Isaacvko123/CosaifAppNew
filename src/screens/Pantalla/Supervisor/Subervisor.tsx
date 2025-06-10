@@ -443,7 +443,14 @@ const styles = StyleSheet.create({
     }),
     ...Platform.select({
       ios: PLATFORM_STYLES.ios.shadowProps,
-      android: PLATFORM_STYLES.android.shadowProps,
+      android: {
+        // Provide all required shadow properties for Android
+      
+        shadowColor: '#000',
+        shadowOpacity: 0.1,
+        shadowOffset: { width: 0, height: 2 },
+        shadowRadius: 6,
+      },
     }),
   },
   retryText: {

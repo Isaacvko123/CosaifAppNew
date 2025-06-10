@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
+import messaging from '@react-native-firebase/messaging';
 import {
   SafeAreaView,
   KeyboardAvoidingView,
@@ -20,6 +21,9 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// 🔧 IMPORTAR EL NOTIFICATION SERVICE - RUTA CORREGIDA
+import NotificationService from '../navigation/NotificationService';
 
 // Navigation routes definition
 type RootStackParamList = {
@@ -137,25 +141,15 @@ export default function Login() {
   };
 
   const handleLogin = async () => {
-    // Feedback táctil al tocar el botón
+    /* Animación de "tap" */
     Animated.sequence([
-      Animated.timing(scaleAnim, {
-        toValue: 0.92,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        friction: 3,
-        tension: 40,
-        useNativeDriver: true,
-      }),
+      Animated.timing(scaleAnim, { toValue: 0.92, duration: 100, useNativeDriver: true }),
+      Animated.spring(scaleAnim, { toValue: 1, friction: 3, tension: 40, useNativeDriver: true }),
     ]).start();
-    
-    // Ocultar el teclado
+
     Keyboard.dismiss();
-    
     setError('');
+
     if (!username.trim() || !password.trim()) {
       setError('Por favor, completa todos los campos');
       playErrorAnimation();
@@ -164,33 +158,47 @@ export default function Login() {
 
     try {
       setIsLoading(true);
-      
-      // Limpiar datos previos
+      console.log('🔐 Iniciando proceso de login...');
+
+      // Limpia credenciales previas
       if (Platform.OS === 'web') {
         localStorage.removeItem('token');
         localStorage.removeItem('rol');
         localStorage.removeItem('user');
+        localStorage.removeItem('active_incident');
+        localStorage.removeItem('incident_history');
       } else {
-        await AsyncStorage.multiRemove(['token', 'rol', 'user']);
+        await AsyncStorage.multiRemove([
+          'token', 
+          'rol', 
+          'user',
+          'active_incident',
+          'incident_history'
+        ]);
       }
+      console.log('🧹 Datos anteriores limpiados');
 
-      const response = await fetch('http://10.10.10.6:3000/usuarios/login', {
+      /* ---------- LOGIN ---------- */
+      console.log('📡 Enviando credenciales al servidor...');
+      const res = await fetch('http://31.97.13.182:3000/usuarios/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ nombre: username, contrasena: password }),
       });
 
-      const data = await response.json();
+      const { token, user, error: errMsg } = await res.json();
       setIsLoading(false);
 
-      if (!response.ok) {
-        setError(data?.error ?? 'Error en la autenticación');
+      if (!res.ok) {
+        console.error('❌ Error de autenticación:', errMsg);
+        setError(errMsg ?? 'Error en la autenticación');
         playErrorAnimation();
         return;
       }
 
-      const { token, user } = data;
+      console.log('✅ Login exitoso:', { nombre: user.nombre, rol: user.rol });
 
+      /* ---------- PERSISTE JWT y USER ---------- */
       if (Platform.OS === 'web') {
         localStorage.setItem('token', token);
         localStorage.setItem('rol', user.rol);
@@ -202,13 +210,100 @@ export default function Login() {
           ['user', JSON.stringify(user)],
         ]);
       }
-      
-      // Alerta de bienvenida (exactamente como en el original)
+      console.log('💾 Datos de usuario guardados en AsyncStorage');
+
+      /* ---------- REGISTRA TOKEN FCM Y CONFIGURA NOTIFICACIONES ---------- */
+      try {
+        console.log('🔔 Configurando notificaciones FCM...');
+        
+        // 1) Solicita permisos
+        const auth = await messaging().requestPermission();
+        const enabled =
+          auth === messaging.AuthorizationStatus.AUTHORIZED ||
+          auth === messaging.AuthorizationStatus.PROVISIONAL;
+
+        console.log('📱 Permisos FCM:', enabled ? 'Concedidos' : 'Denegados');
+
+        if (enabled) {
+          // 2) Obtiene token FCM
+          const fcmToken = await messaging().getToken();
+          console.log('🔑 FCM Token obtenido:', fcmToken.substring(0, 20) + '...');
+
+          // 3) Envía al backend
+          const fcmResponse = await fetch('http://31.97.13.182:3000/fcm', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ usuarioId: user.id, token: fcmToken }),
+          });
+
+          if (fcmResponse.ok) {
+            console.log('✅ Token FCM registrado en el servidor');
+          } else {
+            console.warn('⚠️ Error registrando token FCM en el servidor');
+          }
+
+          // 4) Configura actualización de token
+          messaging().onTokenRefresh(async newToken => {
+            console.log('🔄 Token FCM actualizado:', newToken.substring(0, 20) + '...');
+            try {
+              await fetch('http://31.97.13.182:3000/fcm', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({ usuarioId: user.id, token: newToken }),
+              });
+              console.log('✅ Token FCM actualizado en el servidor');
+            } catch (refreshError) {
+              console.error('❌ Error actualizando token FCM:', refreshError);
+            }
+          });
+
+          // 🚨 INICIALIZAR SISTEMA DE NOTIFICACIONES PARA CLIENTES
+          if (user.rol?.toUpperCase() === 'CLIENTE') {
+            console.log('🔔 Usuario es CLIENTE - Inicializando sistema de notificaciones...');
+            
+            // Verificar que el NotificationService esté disponible
+            try {
+              const notificationService = NotificationService.getInstance();
+              console.log('🔧 NotificationService obtenido:', !!notificationService);
+              
+              // Dar tiempo para que AsyncStorage se actualice
+              setTimeout(async () => {
+                try {
+                  console.log('🚀 Inicializando NotificationService...');
+                  await notificationService.initialize();
+                  console.log('✅ Sistema de notificaciones inicializado correctamente');
+                  
+                  // Verificar configuración
+                  const hasActiveIncident = await notificationService.hasActiveIncident();
+                  console.log('📋 ¿Hay incidente activo al login?', hasActiveIncident);
+                  
+                } catch (notificationError) {
+                  console.error('❌ Error inicializando NotificationService:', notificationError);
+                }
+              }, 1000); // Aumentado a 1 segundo para mayor seguridad
+              
+            } catch (serviceError) {
+              console.error('❌ Error obteniendo NotificationService:', serviceError);
+            }
+          } else {
+            console.log('ℹ️ Usuario no es CLIENTE, omitiendo inicialización de notificaciones');
+          }
+        }
+      } catch (fcmErr) {
+        console.warn('⚠️ Error en configuración FCM:', fcmErr);
+      }
+
+      /* ---------- BIENVENIDA Y NAVEGACIÓN ---------- */
       Alert.alert('Bienvenido', user.nombre);
 
-      // Redirección (exactamente como en el original)
-      const role = user.rol?.toUpperCase();
-      switch (role) {
+      console.log('🧭 Navegando según rol:', user.rol?.toUpperCase());
+      switch ((user.rol ?? '').toUpperCase()) {
         case 'SUPERVISOR':
           navigateTo('Supervisor');
           break;
@@ -223,8 +318,9 @@ export default function Login() {
           navigateTo('Cliente');
           break;
       }
+      
     } catch (err: any) {
-      console.error(err);
+      console.error('❌ Error crítico en login:', err);
       setIsLoading(false);
       Alert.alert(
         'Error',
@@ -336,7 +432,7 @@ export default function Login() {
                 marginBottom: isKeyboardOpen ? 15 : 25 
               }
             ]}>
-              Bienvenido
+              Bienenido
             </Animated.Text>
 
             {/* Entrada de usuario */}

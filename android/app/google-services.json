@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "759843660527",
+    "project_id": "cosaifapp",
+    "storage_bucket": "cosaifapp.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:759843660527:android:4628d991b7612e4f06f11a",
+        "android_client_info": {
+          "package_name": "com.vianko.Cosaif"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDxF2_QxQSwodzrGsTLf8gceqsDJnupKpo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -96,7 +96,7 @@ const Editarnombre: React.FC<EditarnombreProps> = ({ onFinish, userData: propUse
 
     try {
       const token = await AsyncStorage.getItem('token');
-      const response = await fetch(`http://10.10.10.6:3000/usuarios/${userData!.id}`, {
+      const response = await fetch(`http://31.97.13.182:3000/usuarios/${userData!.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

@@ -10,7 +10,8 @@ import {
   StatusBar,
   AppState,
   ScrollView,
-  ActivityIndicator
+  ActivityIndicator,
+  BackHandler
 } from 'react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { RouteProp } from '@react-navigation/native';
@@ -39,10 +40,7 @@ const COLORS = {
   WHITE: '#FFFFFF'
 };
 
-// API URL base - configurable
-const API_BASE_URL = 'http://10.10.10.6:3000'; // Idealmente usar una variable de entorno
-
-// Definición de tareas en segundo plano
+const API_BASE_URL = 'http://31.97.13.182:3000';
 const BACKGROUND_TIMER_TASK = 'background-timer-task';
 
 // Tipos para detalles del movimiento
@@ -79,7 +77,6 @@ Notifications.setNotificationHandler({
 // Registro de la tarea en segundo plano
 TaskManager.defineTask(BACKGROUND_TIMER_TASK, async () => {
   try {
-    // Obtener tiempo actual del almacenamiento
     const timeStr = await AsyncStorage.getItem('movimiento_timer');
     if (timeStr) {
       const timeData = JSON.parse(timeStr);
@@ -88,8 +85,6 @@ TaskManager.defineTask(BACKGROUND_TIMER_TASK, async () => {
       if (isRunning) {
         const now = new Date().getTime();
         const elapsedSeconds = Math.floor((now - startTime) / 1000);
-        
-        // Actualizar notificación
         await updateTimerNotification(elapsedSeconds, movimientoId, locomotora);
       }
     }
@@ -99,24 +94,53 @@ TaskManager.defineTask(BACKGROUND_TIMER_TASK, async () => {
   }
 });
 
-// Función para limpiar todos los datos y tareas
-const cleanupTimerResources = async () => {
+// ← FUNCIÓN MEJORADA PARA LIMPIAR COMPLETAMENTE TODOS LOS DATOS DEL MOVIMIENTO
+const cleanupAllMovementData = async (movimientoId?: string) => {
   try {
-    // Eliminar datos de AsyncStorage
-    await AsyncStorage.removeItem('movimiento_timer');
+    console.log('🧹 Iniciando limpieza completa de datos del movimiento...');
     
-    // Cancelar todas las notificaciones
+    // 1. Eliminar datos del timer
+    await AsyncStorage.removeItem('movimiento_timer');
+    console.log('✅ Timer data eliminado');
+    
+    // 2. Eliminar información específica del movimiento si se proporciona ID
+    if (movimientoId) {
+      await AsyncStorage.removeItem(`movimiento_info_${movimientoId}`);
+      console.log(`✅ Movimiento info ${movimientoId} eliminado`);
+    }
+    
+    // 3. Cancelar todas las notificaciones
     await Notifications.dismissAllNotificationsAsync();
     await Notifications.cancelAllScheduledNotificationsAsync();
+    console.log('✅ Notificaciones eliminadas');
     
+    // 4. Limpiar tareas en segundo plano
     try {
       if (await TaskManager.isTaskRegisteredAsync(BACKGROUND_TIMER_TASK)) {
         await BackgroundFetch.unregisterTaskAsync(BACKGROUND_TIMER_TASK);
+        console.log('✅ Background task eliminado');
       }
     } catch (error) {
+      console.log('⚠️ Error eliminando background task (normal):', error);
     }
     
+    // 5. Limpiar cualquier otro dato relacionado con movimientos activos
+    const allKeys = await AsyncStorage.getAllKeys();
+    const movementKeys = allKeys.filter(key => 
+      key.startsWith('movimiento_') || 
+      key.includes('active_movement') ||
+      key.includes('timer_')
+    );
+    
+    if (movementKeys.length > 0) {
+      await AsyncStorage.multiRemove(movementKeys);
+      console.log('✅ Datos adicionales de movimiento eliminados:', movementKeys);
+    }
+    
+    console.log('🎉 Limpieza completa finalizada');
+    
   } catch (error) {
+    console.error('❌ Error en limpieza completa:', error);
   }
 };
 
@@ -153,8 +177,8 @@ const updateTimerNotification = async (
   
   await Notifications.scheduleNotificationAsync({
     content: {
-      title: `Movimiento en curso - Loco #${locomotora}`,
-      body: `⏱️ Tiempo: ${formattedTime} | ID: ${movimientoId}`,
+      title: `🚂 MOVIMIENTO ACTIVO - Loco #${locomotora}`,
+      body: `⏱️ Tiempo: ${formattedTime} | ID: ${movimientoId}\n🔒 Debes finalizar para continuar`,
       data: { movimientoId, locomotora },
       sticky: true,
       autoDismiss: false,
@@ -168,7 +192,7 @@ const updateTimerNotification = async (
 // Función para obtener el token de autenticación
 const getAuthToken = async () => {
   try {
-    const token = await AsyncStorage.getItem('token'); // Nombre correcto para obtener el token
+    const token = await AsyncStorage.getItem('token');
     return token;
   } catch (error) {
     return null;
@@ -177,7 +201,7 @@ const getAuthToken = async () => {
 
 // Transformar datos del movimiento para mostrar en UI
 const transformMovementData = (data: any): MovimientoDetalle => {
-  const m = data.movimiento;
+  const m = data.movimiento || data;
   
   if (!m) {
     return {
@@ -200,27 +224,67 @@ const transformMovementData = (data: any): MovimientoDetalle => {
     };
   }
   
-  // Manejo de vía destino (igual que en Maquinista)
-  const viaDestinoNombre =
-    m.viaDestino?.nombre ?? (m.lavado ? 'Lavado' : m.torno ? 'Torno' : null);
+  console.log('🔍 Datos del movimiento recibidos:', JSON.stringify(m, null, 2));
+  
+  // Lógica mejorada para vía destino
+  let viaDestinoNombre = null;
+  
+  // Caso especial: MD_trabajando va a "Quita"
+  if (m.tipoMovimiento === 'MD_trabajando') {
+    viaDestinoNombre = 'Quita';
+  } 
+  // Si tiene vía destino explícita
+  else if (m.viaDestino?.nombre) {
+    viaDestinoNombre = m.viaDestino.nombre;
+  }
+  // Si es lavado
+  else if (m.lavado === true) {
+    viaDestinoNombre = 'Lavado';
+  }
+  // Si es torno
+  else if (m.torno === true) {
+    viaDestinoNombre = 'Torno';
+  }
+  // Otros casos especiales según tipo de movimiento
+  else if (m.tipoMovimiento === 'Entrada') {
+    viaDestinoNombre = 'Entrada Depot';
+  }
+  else if (m.tipoMovimiento === 'Salida') {
+    viaDestinoNombre = 'Salida Depot';
+  }
+  
+  // Obtener cliente de múltiples posibles ubicaciones
+  const clienteNombre = 
+    m.empresa?.nombre || 
+    m.cliente?.nombre || 
+    m.clienteNombre || 
+    m.company?.nombre ||
+    'Cliente no especificado';
+  
+  // Obtener vía origen de múltiples posibles ubicaciones
+  const viaOrigenNombre = 
+    m.viaOrigen?.nombre || 
+    m.origenVia?.nombre || 
+    m.origen?.nombre ||
+    'Origen no especificado';
     
   return {
-    id: m.id,
-    locomotora: m.locomotiveNumber ?? m.locomotora ?? 0,
-    cliente: m.empresa?.nombre ?? 'N/A',
-    posicionCabina: m.posicionCabina ?? 'Sin dato',
-    posicionChimenea: m.posicionChimenea ?? 'Sin dato',
-    tipoMovimiento: m.tipoMovimiento ?? 'Sin dato',
-    direccionEmpuje: m.direccionEmpuje ?? 'N/A',
-    prioridad: m.prioridad ?? 'N/A',
-    lavado: m.lavado ?? false,
-    torno: m.torno ?? false,
+    id: m.id || 0,
+    locomotora: m.locomotiveNumber || m.locomotora || m.locomotive || 0,
+    cliente: clienteNombre,
+    posicionCabina: m.posicionCabina || m.cabina || 'Sin especificar',
+    posicionChimenea: m.posicionChimenea || m.chimenea || 'Sin especificar',
+    tipoMovimiento: m.tipoMovimiento || m.tipo || 'Sin especificar',
+    direccionEmpuje: m.direccionEmpuje || m.direccion || 'Sin especificar',
+    prioridad: m.prioridad || m.priority || 'Normal',
+    lavado: m.lavado === true || m.lavado === 'true',
+    torno: m.torno === true || m.torno === 'true',
     fechaSolicitud: m.fechaSolicitud ? new Date(m.fechaSolicitud).toLocaleString() : new Date().toLocaleString(),
-    viaOrigen: m.viaOrigen?.nombre ?? 'N/A',
+    viaOrigen: viaOrigenNombre,
     viaDestino: viaDestinoNombre,
-    rondaNumero: data.rondaNumero ?? 0,
-    orden: data.orden ?? 0,
-    estado: m.estado ?? 'En curso'
+    rondaNumero: data.rondaNumero || m.rondaNumero || 0,
+    orden: data.orden || m.orden || 0,
+    estado: m.estado || 'En curso'
   };
 };
 
@@ -228,71 +292,77 @@ const transformMovementData = (data: any): MovimientoDetalle => {
 const obtenerDetallesMovimiento = async (movimientoId: string, locomotora: string): Promise<MovimientoDetalle | null> => {
   try {
     const token = await getAuthToken();
-    
     if (!token) {
+      console.log('❌ No hay token de autenticación');
       return null;
     }
     
-    // Obtener datos de usuario para encontrar la localidadId
     const userStr = await AsyncStorage.getItem('user');
     if (!userStr) {
+      console.log('❌ No hay datos de usuario');
       return null;
     }
     
     const userData = JSON.parse(userStr);
-    
     if (!userData.localidadId) {
+      console.log('❌ No hay localidadId en datos de usuario');
       return null;
     }
     
-    // Probar con el endpoint exacto que usa Maquinista
+    console.log(`🌐 Consultando API para movimiento ${movimientoId} en localidad ${userData.localidadId}`);
+    
+    // ← PRIMER INTENTO: Endpoint 'siguiente'
     try {
+      console.log('🔍 Intentando endpoint /siguiente...');
       const response = await fetch(
         `${API_BASE_URL}/rondas/localidad/${userData.localidadId}/siguiente`,
         {
           method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${token}`
-          },
+          headers: { 'Authorization': `Bearer ${token}` },
         }
       );
       
       if (response.ok) {
         const data = await response.json();
+        console.log('📡 Respuesta de /siguiente:', JSON.stringify(data, null, 2));
         
-        // Verificar si contiene el movimiento que buscamos
         if (data.movimiento && data.movimiento.id.toString() === movimientoId) {
+          console.log('✅ Movimiento encontrado en /siguiente');
           return transformMovementData(data);
         } else {
+          console.log('⚠️ Movimiento no coincide en /siguiente');
         }
+      } else {
+        console.log(`❌ Error en /siguiente: ${response.status}`);
       }
     } catch (error) {
+      console.log('❌ Error en endpoint /siguiente:', error);
     }
     
-    // Intentar con endpoint actual (segunda opción)
+    // ← SEGUNDO INTENTO: Endpoint 'actual'
     try {
+      console.log('🔍 Intentando endpoint /actual...');
       const response = await fetch(
         `${API_BASE_URL}/rondas/localidad/${userData.localidadId}/actual`,
         {
           method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${token}`
-          },
+          headers: { 'Authorization': `Bearer ${token}` },
         }
       );
       
       if (response.ok) {
         const data = await response.json();
+        console.log('📡 Respuesta de /actual:', JSON.stringify(data, null, 2));
         
-        // Ver si hay movimientos y encontrar el actual
         if (data.movimientos && Array.isArray(data.movimientos)) {
           const movimientoEncontrado = data.movimientos.find(
             (mov: any) => mov.id.toString() === movimientoId
           );
           
           if (movimientoEncontrado) {
+            console.log('✅ Movimiento encontrado en /actual:', movimientoEncontrado);
             
-            // Estructurar datos para transformMovementData (mismo formato que en Maquinista)
+            // Estructurar datos para transformMovementData
             const movimientoData = {
               movimiento: movimientoEncontrado,
               rondaNumero: data.numero || 0,
@@ -300,32 +370,41 @@ const obtenerDetallesMovimiento = async (movimientoId: string, locomotora: strin
             };
             
             return transformMovementData(movimientoData);
+          } else {
+            console.log('⚠️ Movimiento no encontrado en array de /actual');
           }
+        } else {
+          console.log('⚠️ No hay array de movimientos en /actual');
         }
+      } else {
+        console.log(`❌ Error en /actual: ${response.status}`);
       }
     } catch (error) {
+      console.log('❌ Error en endpoint /actual:', error);
     }
 
-    // Como último recurso, crear objeto básico
+    // ← ÚLTIMO RECURSO: Crear objeto básico con los datos que tenemos
+    console.log('🆘 Creando objeto básico como último recurso');
     return {
       id: parseInt(movimientoId),
       locomotora: parseInt(locomotora),
-      cliente: 'No disponible',
-      posicionCabina: 'No disponible',
-      posicionChimenea: 'No disponible',
-      tipoMovimiento: 'No disponible',
-      direccionEmpuje: 'N/A',
-      prioridad: 'N/A',
+      cliente: 'Información no disponible',
+      posicionCabina: 'Sin especificar',
+      posicionChimenea: 'Sin especificar',
+      tipoMovimiento: 'En curso',
+      direccionEmpuje: 'Sin especificar',
+      prioridad: 'Normal',
       lavado: false,
       torno: false,
       fechaSolicitud: new Date().toLocaleString(),
-      viaOrigen: 'No disponible',
-      viaDestino: null,
+      viaOrigen: 'Información no disponible',
+      viaDestino: 'Información no disponible',
       rondaNumero: 0,
       orden: 0,
       estado: 'En curso'
     };
   } catch (error) {
+    console.error('❌ Error general en obtenerDetallesMovimiento:', error);
     return null;
   }
 };
@@ -334,10 +413,7 @@ const obtenerDetallesMovimiento = async (movimientoId: string, locomotora: strin
 const finalizarMovimientoEnBackend = async (movimientoId: string): Promise<boolean> => {
   try {
     const token = await getAuthToken();
-    
-    if (!token) {
-      return false;
-    }
+    if (!token) return false;
     
     const response = await fetch(`${API_BASE_URL}/movimientos/${movimientoId}/finalizar`, {
       method: 'PATCH',
@@ -347,14 +423,13 @@ const finalizarMovimientoEnBackend = async (movimientoId: string): Promise<boole
       },
     });
 
-    if (!response.ok) {
-      return false;
-    }
+    if (!response.ok) return false;
     
-    // Intentar obtener el cuerpo de la respuesta (para debug)
     try {
       const responseBody = await response.json();
+      console.log('Response from finalizar:', responseBody);
     } catch (e) {
+      // Ignorar errores de parsing
     }
     
     return true;
@@ -373,7 +448,6 @@ interface MovimientoProps {
 }
 
 const MovimientoP: React.FC<MovimientoProps> = ({ navigation, route }) => {
-  // Extraer parámetros
   const { movimientoId, locomotora } = route.params;
   
   // Estados
@@ -386,56 +460,136 @@ const MovimientoP: React.FC<MovimientoProps> = ({ navigation, route }) => {
   const [processingFinalization, setProcessingFinalization] = useState(false);
   const [movimientoDetalle, setMovimientoDetalle] = useState<MovimientoDetalle | null>(null);
   const [loadingDetalles, setLoadingDetalles] = useState(true);
+  const [movementFinalized, setMovementFinalized] = useState(false); // ← NUEVO ESTADO
 
   // Referencias
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const startTimeRef = useRef<number>(new Date().getTime());
-  const alertShownRef = useRef(false);
   const navigationAttemptedRef = useRef(false);
+
+  // ← BLOQUEO TOTAL DEL BOTÓN FÍSICO DE ATRÁS
+  useEffect(() => {
+    const backAction = () => {
+      if (isRunning && !movementFinalized) {
+        // ← BLOQUEO ABSOLUTO - NO PERMITIR SALIR BAJO NINGUNA CIRCUNSTANCIA
+        Alert.alert(
+          "🚂 Movimiento en Curso",
+          "No puedes salir de la aplicación mientras hay un movimiento activo.\n\n🔒 Debes finalizar el movimiento (TERMINADO o INCIDENTE) para continuar.",
+          [
+            { 
+              text: "Entendido", 
+              style: "default",
+              onPress: () => {
+                // Mostrar notificación persistente como recordatorio
+                updateTimerNotification(seconds, movimientoId, locomotora);
+              }
+            }
+          ],
+          { cancelable: false }
+        );
+        return true; // ← BLOQUEAR COMPLETAMENTE - NUNCA PERMITIR SALIR
+      }
+      return false; // Solo permitir si el movimiento está finalizado
+    };
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+    return () => backHandler.remove();
+  }, [isRunning, movementFinalized, seconds, movimientoId, locomotora]);
 
   // Cargar detalles del movimiento
   const cargarDetallesMovimiento = useCallback(async () => {
     setLoadingDetalles(true);
     try {
-      // Verificar primero en AsyncStorage
+      console.log('🔍 Cargando detalles para movimiento:', movimientoId);
+      
+      // ← PRIMERO: Intentar desde AsyncStorage (datos guardados desde Maquinista)
       try {
         const savedData = await AsyncStorage.getItem(`movimiento_info_${movimientoId}`);
-        
         if (savedData) {
+          console.log('📦 Datos encontrados en AsyncStorage:', savedData);
           const movData = JSON.parse(savedData);
           
-          // Convertir al formato que espera la función transformMovementData
-          const formattedData = {
-            movimiento: movData,
-            rondaNumero: movData.rondaNumero || 0,
-            orden: movData.orden || 0
-          };
-          
-          setMovimientoDetalle(transformMovementData(formattedData));
-          setLoadingDetalles(false);
-          return;
+          // Si los datos ya están transformados, usarlos directamente
+          if (movData.cliente && movData.viaOrigen) {
+            console.log('✅ Usando datos ya transformados desde AsyncStorage');
+            console.log('📋 Datos que se van a mostrar:', JSON.stringify(movData, null, 2));
+            setMovimientoDetalle(movData);
+            setLoadingDetalles(false);
+            return;
+          } else {
+            // Si son datos en bruto, transformarlos
+            console.log('🔄 Transformando datos en bruto desde AsyncStorage');
+            const transformedData = transformMovementData(movData);
+            console.log('📋 Datos transformados:', JSON.stringify(transformedData, null, 2));
+            setMovimientoDetalle(transformedData);
+            
+            // Guardar los datos transformados para próximas veces
+            await AsyncStorage.setItem(
+              `movimiento_info_${movimientoId}`,
+              JSON.stringify(transformedData)
+            );
+            setLoadingDetalles(false);
+            return;
+          }
         }
       } catch (storageError) {
+        console.log('⚠️ Error leyendo AsyncStorage:', storageError);
       }
       
+      // ← SEGUNDO: Si no hay datos guardados, consultar la API
+      console.log('🌐 Consultando API para obtener detalles...');
       const detalles = await obtenerDetallesMovimiento(movimientoId, locomotora);
       if (detalles) {
+        console.log('✅ Detalles obtenidos de la API:', JSON.stringify(detalles, null, 2));
         setMovimientoDetalle(detalles);
         
-        // Guardar para uso futuro
+        // Guardar los datos transformados en AsyncStorage
         try {
           await AsyncStorage.setItem(
             `movimiento_info_${movimientoId}`,
             JSON.stringify(detalles)
           );
+          console.log('💾 Detalles guardados en AsyncStorage');
         } catch (saveError) {
+          console.error('❌ Error guardando en AsyncStorage:', saveError);
         }
+      } else {
+        console.log('❌ No se pudieron obtener detalles de la API');
       }
     } catch (error) {
+      console.error('❌ Error general cargando detalles:', error);
     } finally {
       setLoadingDetalles(false);
     }
   }, [movimientoId, locomotora]);
+
+  // ← NAVEGACIÓN MEJORADA CON LIMPIEZA COMPLETA
+  const navigateToMaquinista = useCallback(async () => {
+    if (navigationAttemptedRef.current) return;
+    navigationAttemptedRef.current = true;
+    
+    console.log('🚀 Navegando a Maquinista después de finalizar movimiento...');
+    
+    // ← LIMPIAR COMPLETAMENTE TODOS LOS DATOS ANTES DE NAVEGAR
+    await cleanupAllMovementData(movimientoId);
+    
+    try {
+      // ← USAR reset PARA LIMPIAR COMPLETAMENTE LA PILA DE NAVEGACIÓN
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Maquinista' }],
+      });
+      return;
+    } catch (error) {
+      console.error('Error con reset, intentando replace:', error);
+      try {
+        navigation.replace('Maquinista');
+      } catch (replaceError) {
+        console.error('Error con replace:', replaceError);
+        navigation.navigate('Maquinista');
+      }
+    }
+  }, [navigation, movimientoId]);
 
   // Solicitar permisos de notificación
   useEffect(() => {
@@ -444,7 +598,7 @@ const MovimientoP: React.FC<MovimientoProps> = ({ navigation, route }) => {
       if (status !== 'granted') {
         Alert.alert(
           'Permisos requeridos',
-          'Las notificaciones son necesarias para mantener el cronómetro visible cuando la app está en segundo plano.'
+          'Las notificaciones son necesarias para el funcionamiento del cronómetro en segundo plano.'
         );
       }
     })();
@@ -453,21 +607,19 @@ const MovimientoP: React.FC<MovimientoProps> = ({ navigation, route }) => {
   // Registrar la tarea en segundo plano
   const registerBackgroundTask = async () => {
     try {
-      // Verificar si la plataforma soporta Background Fetch
       const isAvailable = await BackgroundFetch.getStatusAsync()
         .then(() => true)
         .catch(() => false);
       
       if (isAvailable) {
         await BackgroundFetch.registerTaskAsync(BACKGROUND_TIMER_TASK, {
-          minimumInterval: 15, // 15 segundos
+          minimumInterval: 15,
           stopOnTerminate: false,
           startOnBoot: true,
         });
-      } else {
       }
     } catch (err) {
-      // No mostrar error, simplemente loguear que no está disponible
+      // No mostrar error
     }
   };
 
@@ -476,7 +628,6 @@ const MovimientoP: React.FC<MovimientoProps> = ({ navigation, route }) => {
     const now = new Date().getTime();
     startTimeRef.current = now;
     
-    // Guardar datos en AsyncStorage
     const timerData = {
       startTime: now,
       movimientoId,
@@ -494,21 +645,17 @@ const MovimientoP: React.FC<MovimientoProps> = ({ navigation, route }) => {
       if (timeStr) {
         const timeData = JSON.parse(timeStr);
         
-        // Verificar si es el mismo movimiento
         if (timeData.movimientoId === movimientoId) {
           startTimeRef.current = timeData.startTime;
           setIsRunning(timeData.isRunning);
           
-          // Calcular segundos transcurridos
           const now = new Date().getTime();
           const elapsedSeconds = Math.floor((now - timeData.startTime) / 1000);
           setSeconds(elapsedSeconds);
         } else {
-          // Nuevo movimiento, inicializar datos
           await initializeTimerData();
         }
       } else {
-        // No hay datos guardados, inicializar
         await initializeTimerData();
       }
     } catch (error) {
@@ -524,9 +671,7 @@ const MovimientoP: React.FC<MovimientoProps> = ({ navigation, route }) => {
   // Manejar cambios de estado de la aplicación
   const handleAppStateChange = useCallback((nextAppState: any) => {
     setAppState(nextAppState);
-    
     if (nextAppState === 'active') {
-      // Cuando la app vuelve a primer plano, sincronizar cronómetro
       syncTimerWithStorage();
     }
   }, []);
@@ -537,28 +682,30 @@ const MovimientoP: React.FC<MovimientoProps> = ({ navigation, route }) => {
       const timeStr = await AsyncStorage.getItem('movimiento_timer');
       if (timeStr) {
         const timeData = JSON.parse(timeStr);
-        
         if (timeData.isRunning && timeData.movimientoId === movimientoId) {
           const now = new Date().getTime();
           const elapsedSeconds = Math.floor((now - timeData.startTime) / 1000);
           setSeconds(elapsedSeconds);
-          
-          // Actualizar notificación incluso si Background Fetch no está disponible
           updateTimerNotification(elapsedSeconds, movimientoId, locomotora);
         }
       }
     } catch (error) {
+      // Ignorar errores
     }
   };
 
-  // Función para renderizar filas de datos con indicador cuando no está disponible
+  // Función para renderizar filas de datos
   const renderDataRow = (icon: string, label: string, value: string | number | boolean | null | undefined) => {
-    // Manejo de valores nulos o indefinidos
     let displayValue = value;
+    let isSpecialCase = false;
+    
     if (value === null || value === undefined || value === 'N/A' || value === 'Sin dato') {
-      displayValue = 'No disponible';
+      displayValue = 'No especificado';
+      isSpecialCase = true;
     } else if (typeof value === 'boolean') {
       displayValue = value ? 'Sí' : 'No';
+    } else if (value === 'Sin especificar' || value === 'Cliente no especificado' || value === 'Origen no especificado') {
+      isSpecialCase = true;
     }
     
     return (
@@ -567,7 +714,7 @@ const MovimientoP: React.FC<MovimientoProps> = ({ navigation, route }) => {
           <FontAwesome5
             name={icon}
             size={16}
-            color={COLORS.PRIMARY_RED}
+            color={isSpecialCase ? COLORS.WARNING : COLORS.PRIMARY_RED}
             style={styles.labelIcon}
           />
           <Text style={styles.dataLabel}>{label}</Text>
@@ -575,7 +722,7 @@ const MovimientoP: React.FC<MovimientoProps> = ({ navigation, route }) => {
         <Text 
           style={[
             styles.dataValue, 
-            (value === null || value === undefined || value === 'N/A' || value === 'Sin dato') ? styles.dataValueNA : null
+            isSpecialCase ? styles.dataValueNA : null
           ]}
         >
           {displayValue}
@@ -584,67 +731,10 @@ const MovimientoP: React.FC<MovimientoProps> = ({ navigation, route }) => {
     );
   };
 
-  // Navegar a la pantalla Maquinista con garantía
-  const navigateToMaquinista = useCallback(() => {
-    // Evitar múltiples intentos
-    if (navigationAttemptedRef.current) return;
-    navigationAttemptedRef.current = true;
-    
-    
-    // Estrategia principal: replace (mejor opción)
-    try {
-      navigation.replace('Maquinista');
-      return;
-    } catch (error) {
-    }
-    
-    // Estrategia de respaldo 1: reset
-    try {
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Maquinista' }],
-      });
-      return;
-    } catch (error) {
-    }
-    
-    // Estrategia de respaldo 2: navigate
-    try {
-      navigation.navigate('Maquinista');
-      return;
-    } catch (error) {
-    }
-    
-    // Estrategia de respaldo 3: popToTop y luego navigate
-    try {
-      navigation.popToTop();
-      setTimeout(() => navigation.navigate('Maquinista'), 100);
-      return;
-    } catch (error) {
-    }
-    
-    // Si todas fallan
-    navigation.goBack();
-  }, [navigation]);
-
   // Inicialización
   useEffect(() => {
-    // Registrar listener para cambios de estado de la app
     const subscription = AppState.addEventListener('change', handleAppStateChange);
     
-    // Para debug - imprimir todos los valores en AsyncStorage
-    const debugAsyncStorage = async () => {
-      try {
-        const keys = await AsyncStorage.getAllKeys();
-        const items = await AsyncStorage.multiGet(keys);
-        items.forEach(([key, value]) => {
-        });
-      } catch (error) {
-      }
-    };
-    debugAsyncStorage();
-    
-    // Cargar datos del timer y detalles del movimiento
     Promise.all([
       loadTimerFromStorage(),
       cargarDetallesMovimiento()
@@ -654,7 +744,6 @@ const MovimientoP: React.FC<MovimientoProps> = ({ navigation, route }) => {
     });
     
     return () => {
-      // Limpiar al desmontar
       subscription.remove();
       if (timerIntervalRef.current) {
         clearInterval(timerIntervalRef.current);
@@ -662,9 +751,8 @@ const MovimientoP: React.FC<MovimientoProps> = ({ navigation, route }) => {
     };
   }, []);
 
-  // Manejar cronómetro en primer plano y segundo plano
+  // Manejar cronómetro
   useEffect(() => {
-    // Cronómetro en primer plano (interfaz visible)
     if (isRunning) {
       timerIntervalRef.current = setInterval(() => {
         setSeconds(prevSeconds => prevSeconds + 1);
@@ -673,12 +761,11 @@ const MovimientoP: React.FC<MovimientoProps> = ({ navigation, route }) => {
       clearInterval(timerIntervalRef.current);
     }
     
-    // Sincronizar con tiempo almacenado para segundo plano
     const backgroundSync = setInterval(async () => {
       if (isRunning && appState !== 'active') {
         await syncTimerWithStorage();
       }
-    }, 5000); // Sincronizar cada 5 segundos en segundo plano
+    }, 5000);
     
     return () => {
       if (timerIntervalRef.current) {
@@ -688,7 +775,7 @@ const MovimientoP: React.FC<MovimientoProps> = ({ navigation, route }) => {
     };
   }, [isRunning, appState]);
 
-  // Actualizar notificación cada 15 segundos cuando la app está en primer plano
+  // Actualizar notificación
   useEffect(() => {
     if (seconds % 15 === 0 && isRunning) {
       updateTimerNotification(seconds, movimientoId, locomotora);
@@ -707,95 +794,85 @@ const MovimientoP: React.FC<MovimientoProps> = ({ navigation, route }) => {
     setShowConfirmation(true);
   }, []);
 
-  // Función para finalizar el movimiento
+  // ← FUNCIÓN MEJORADA PARA FINALIZAR EL MOVIMIENTO
   const finalizarMovimiento = useCallback(async () => {
-    // Evitar procesamientos múltiples
     if (processingFinalization) return;
     setProcessingFinalization(true);
     
     try {
-      // Detener el cronómetro
+      console.log('🏁 Iniciando finalización del movimiento...');
+      
+      // 1. Detener el cronómetro
       setIsRunning(false);
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
       
-      // Limpiar recursos del timer (importante hacerlo aquí)
-      await cleanupTimerResources();
-      
-      // Comunicar finalización al backend
+      // 2. Comunicar finalización al backend
       const exito = await finalizarMovimientoEnBackend(movimientoId);
       
-      if (exito) {
-        // Navegar inmediatamente sin mostrar alerta (opcional)
-        navigateToMaquinista();
-        return true;
-      } else {
-        return false;
-      }
+      // 3. Marcar como finalizado (permitir navegación)
+      setMovementFinalized(true);
+      
+      // 4. Limpiar completamente todos los datos
+      await cleanupAllMovementData(movimientoId);
+      
+      console.log('✅ Finalización completada, éxito del backend:', exito);
+      return exito;
+      
     } catch (error) {
+      console.error('❌ Error en finalización:', error);
       return false;
     } finally {
       setProcessingFinalization(false);
     }
-  }, [movimientoId, navigateToMaquinista, processingFinalization]);
+  }, [movimientoId, processingFinalization]);
 
-  // Función para confirmar la acción
+  // ← FUNCIÓN MEJORADA PARA CONFIRMAR LA ACCIÓN
   const handleConfirm = useCallback(async () => {
     if (!selectedReason) {
       setShowConfirmation(false);
       return;
     }
     
-    
-    // Cerrar primero el modal de confirmación
     setShowConfirmation(false);
     
     try {
       const tiempoTotal = formatTime(seconds);
       
       if (selectedReason === 'TERMINADO') {
-        // Para finalización real, hacer el proceso completo
         const exito = await finalizarMovimiento();
         
-        // Mostrar alerta de confirmación basada en el resultado
         Alert.alert(
-          `Movimiento ${selectedReason}`,
-          `Movimiento completado\nTiempo total: ${tiempoTotal}${!exito ? '\n(Error en servidor)' : ''}`,
+          `✅ Movimiento ${selectedReason}`,
+          `Movimiento completado exitosamente\n⏱️ Tiempo total: ${tiempoTotal}${!exito ? '\n⚠️ (Advertencia: Error en servidor)' : '\n🌐 Sincronizado con servidor'}`,
           [
             {
-              text: 'OK',
+              text: 'Continuar',
               onPress: () => {
-                if (exito) {
-                  // Si ya navegamos en finalizarMovimiento(), esto es redundante pero seguro
-                  navigateToMaquinista();
-                } else {
-                  // Si hubo error, intentar navegar de todos modos
-                  navigateToMaquinista();
-                }
+                console.log('Usuario confirmó finalización, navegando...');
+                navigateToMaquinista();
               }
             }
           ],
           { cancelable: false }
         );
-      } else {
-        // Para incidente, solo detener el cronómetro y volver atrás
-        setIsRunning(false);
-        if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
-        await cleanupTimerResources();
+      } else if (selectedReason === 'INCIDENTE') {
+        // ← PARA INCIDENTE: Navegar a pantalla de Incidente (NO finalizar)
+        console.log('🚨 Usuario seleccionó incidente, navegando a pantalla de reporte...');
         
-        Alert.alert(
-          `Movimiento ${selectedReason}`,
-          `Incidente registrado\nTiempo total: ${tiempoTotal}`,
-          [{ text: 'OK', onPress: () => navigation.goBack() }],
-          { cancelable: false }
-        );
+        // NO detener el cronómetro - sigue corriendo
+        // NO finalizar el movimiento - continúa activo
+        // Navegar a pantalla de Incidente
+        navigation.navigate('Incidente', {
+          movimientoId: movimientoId,
+          locomotora: locomotora,
+          tiempoTranscurrido: tiempoTotal
+        });
       }
     } catch (error) {
-      
-      // En caso de error inesperado, intentar limpiar y volver atrás
-      await cleanupTimerResources();
-      navigation.goBack();
+      console.error('❌ Error en handleConfirm:', error);
+      Alert.alert('Error', 'Ocurrió un error inesperado. Intenta nuevamente.');
     }
-  }, [selectedReason, seconds, finalizarMovimiento, navigateToMaquinista, navigation]);
+  }, [selectedReason, seconds, finalizarMovimiento, navigateToMaquinista, movimientoId, locomotora, navigation]);
   
   // Función para cancelar la confirmación
   const handleCancel = useCallback(() => {
@@ -816,22 +893,15 @@ const MovimientoP: React.FC<MovimientoProps> = ({ navigation, route }) => {
         <View style={styles.header}>
           <TouchableOpacity
             onPress={() => {
-              if (isRunning) {
-                // Si el cronómetro sigue en marcha, mostrar diálogo de confirmación
+              if (isRunning && !movementFinalized) {
                 Alert.alert(
-                  "¿Salir sin terminar?",
-                  "El cronómetro seguirá en marcha en segundo plano.",
-                  [
-                    { text: "Cancelar", style: "cancel" },
-                    { 
-                      text: "Salir", 
-                      onPress: () => navigation.goBack() 
-                    }
-                  ]
+                  "🔒 Movimiento Bloqueado",
+                  "No puedes salir mientras hay un movimiento activo.\n\n✅ Finaliza el movimiento para continuar.",
+                  [{ text: "Entendido", style: "default" }],
+                  { cancelable: false }
                 );
               } else {
-                // Si no está en marcha, volver directamente
-                navigation.goBack();
+                navigateToMaquinista();
               }
             }}
             style={styles.backButton}
@@ -839,7 +909,7 @@ const MovimientoP: React.FC<MovimientoProps> = ({ navigation, route }) => {
             <FontAwesome5 name="arrow-left" size={18} color={COLORS.WHITE} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>
-            Movimiento en Curso - Loco #{locomotora}
+            🚂 Movimiento Activo - Loco #{locomotora}
           </Text>
           <View style={styles.placeholder} />
         </View>
@@ -853,29 +923,26 @@ const MovimientoP: React.FC<MovimientoProps> = ({ navigation, route }) => {
           {/* Timer Card */}
           <View style={styles.card}>
             <View style={styles.timerContainer}>
-              <Text style={styles.timerLabel}>Tiempo transcurrido:</Text>
+              <Text style={styles.timerLabel}>⏱️ Tiempo transcurrido:</Text>
               <Text style={styles.timer}>{formatTime(seconds)}</Text>
               <View style={styles.runningIndicator}>
-                <View style={[
-                  styles.pulsingDot,
-                  styles.pulsing
-                ]} />
+                <View style={[styles.pulsingDot, styles.pulsing]} />
                 <Text style={styles.runningText}>
-                  En progreso (continúa en segundo plano)
+                  🔄 En progreso (bloqueado hasta finalizar)
                 </Text>
               </View>
             </View>
 
             <View style={styles.infoContainer}>
-              <Text style={styles.infoLabel}>ID del Movimiento:</Text>
+              <Text style={styles.infoLabel}>🆔 ID del Movimiento:</Text>
               <Text style={styles.infoValue}>{movimientoId}</Text>
             </View>
             
             <View style={styles.noteContainer}>
-              <FontAwesome5 name="info-circle" size={14} color={COLORS.PRIMARY_RED} />
+              <FontAwesome5 name="lock" size={14} color={COLORS.PRIMARY_RED} />
               <Text style={styles.noteText}>
-                El cronómetro seguirá funcionando incluso si minimizas la aplicación.
-                Verás una notificación con el tiempo actualizado.
+                🔒 IMPORTANTE: No puedes salir de la aplicación hasta completar este movimiento. 
+                El cronómetro continuará funcionando en segundo plano.
               </Text>
             </View>
 
@@ -887,7 +954,7 @@ const MovimientoP: React.FC<MovimientoProps> = ({ navigation, route }) => {
             >
               <FontAwesome5 name="stop-circle" size={20} color={COLORS.WHITE} style={styles.buttonIcon} />
               <Text style={styles.stopButtonText}>
-                {processingFinalization ? 'PROCESANDO...' : 'PARAR MOVIMIENTO'}
+                {processingFinalization ? '⏳ PROCESANDO...' : '🛑 FINALIZAR MOVIMIENTO'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -900,9 +967,7 @@ const MovimientoP: React.FC<MovimientoProps> = ({ navigation, route }) => {
             >
               <View style={styles.cardTitleRow}>
                 <FontAwesome5 name="train" size={20} color={COLORS.WHITE} />
-                <Text style={styles.cardTitle}>
-                  Detalles del Movimiento
-                </Text>
+                <Text style={styles.cardTitle}>📋 Detalles del Movimiento</Text>
               </View>
               {!loadingDetalles && movimientoDetalle && movimientoDetalle.rondaNumero > 0 && (
                 <Text style={styles.cardSubtitle}>
@@ -927,30 +992,14 @@ const MovimientoP: React.FC<MovimientoProps> = ({ navigation, route }) => {
                   )}
                   {renderDataRow('flag', 'Prioridad', movimientoDetalle.prioridad)}
                   {renderDataRow('door-open', 'Cabina', movimientoDetalle.posicionCabina)}
-                  {renderDataRow(
-                    'industry',
-                    'Chimenea',
-                    movimientoDetalle.posicionChimenea
-                  )}
-                  {renderDataRow(
-                    'map-pin',
-                    'Vía Origen',
-                    movimientoDetalle.viaOrigen
-                  )}
-                  {renderDataRow(
-                    'map-marker-alt',
-                    'Vía Destino',
-                    movimientoDetalle.viaDestino ?? 'N/A'
-                  )}
+                  {renderDataRow('industry', 'Chimenea', movimientoDetalle.posicionChimenea)}
+                  {renderDataRow('map-pin', 'Vía Origen', movimientoDetalle.viaOrigen)}
+                  {renderDataRow('map-marker-alt', 'Vía Destino', movimientoDetalle.viaDestino || 'Sin destino especificado')}
                   {renderDataRow('tint', 'Lavado', movimientoDetalle.lavado)}
                   {renderDataRow('cog', 'Torno', movimientoDetalle.torno)}
 
                   <View style={styles.dateContainer}>
-                    <FontAwesome5
-                      name="clock"
-                      size={14}
-                      color={COLORS.NEUTRAL_700}
-                    />
+                    <FontAwesome5 name="clock" size={14} color={COLORS.NEUTRAL_700} />
                     <Text style={styles.dateText}>
                       Solicitud: {movimientoDetalle.fechaSolicitud}
                     </Text>
@@ -966,13 +1015,43 @@ const MovimientoP: React.FC<MovimientoProps> = ({ navigation, route }) => {
                   >
                     <Text style={styles.retryButtonText}>Reintentar</Text>
                   </TouchableOpacity>
+                  
+                  {/* ← BOTÓN DE DEBUG PARA VER QUÉ DATOS HAY EN ASYNCSTORAGE */}
+                  <TouchableOpacity 
+                    style={[styles.retryButton, { backgroundColor: COLORS.WARNING, marginTop: 8 }]}
+                    onPress={async () => {
+                      try {
+                        const keys = await AsyncStorage.getAllKeys();
+                        const movementKeys = keys.filter(key => key.includes('movimiento'));
+                        const data = await AsyncStorage.multiGet(movementKeys);
+                        
+                        let debugInfo = `🔍 Datos en AsyncStorage:\n\n`;
+                        data.forEach(([key, value]) => {
+                          debugInfo += `${key}:\n${value}\n\n`;
+                        });
+                        
+                        Alert.alert(
+                          'Debug Info', 
+                          debugInfo,
+                          [
+                            { text: 'Copiar', onPress: () => console.log(debugInfo) },
+                            { text: 'OK' }
+                          ]
+                        );
+                      } catch (error) {
+                        Alert.alert('Error', 'No se pudo obtener info de debug');
+                      }
+                    }}
+                  >
+                    <Text style={styles.retryButtonText}>Debug Info</Text>
+                  </TouchableOpacity>
                 </View>
               )}
             </View>
           </View>
         </ScrollView>
 
-        {/* Alerta de motivo de detención */}
+        {/* Modales (mantener los mismos pero con emojis) */}
         <Modal
           visible={showAlert}
           transparent={true}
@@ -981,7 +1060,7 @@ const MovimientoP: React.FC<MovimientoProps> = ({ navigation, route }) => {
         >
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Motivo de detención</Text>
+              <Text style={styles.modalTitle}>🛑 Motivo de finalización</Text>
               <Text style={styles.modalSubtitle}>Seleccione una opción:</Text>
               
               <View style={styles.optionsContainer}>
@@ -990,7 +1069,7 @@ const MovimientoP: React.FC<MovimientoProps> = ({ navigation, route }) => {
                   onPress={() => handleReasonSelect('TERMINADO')}
                 >
                   <FontAwesome5 name="check-circle" size={24} color={COLORS.WHITE} />
-                  <Text style={styles.optionText}>TERMINADO</Text>
+                  <Text style={styles.optionText}>✅ TERMINADO</Text>
                 </TouchableOpacity>
                 
                 <TouchableOpacity
@@ -998,21 +1077,17 @@ const MovimientoP: React.FC<MovimientoProps> = ({ navigation, route }) => {
                   onPress={() => handleReasonSelect('INCIDENTE')}
                 >
                   <FontAwesome5 name="exclamation-triangle" size={24} color={COLORS.WHITE} />
-                  <Text style={styles.optionText}>INCIDENTE</Text>
+                  <Text style={styles.optionText}>⚠️ INCIDENTE</Text>
                 </TouchableOpacity>
               </View>
               
-              <TouchableOpacity
-                style={styles.cancelButton}
-                onPress={handleCloseAlert}
-              >
+              <TouchableOpacity style={styles.cancelButton} onPress={handleCloseAlert}>
                 <Text style={styles.cancelText}>Cancelar</Text>
               </TouchableOpacity>
             </View>
           </View>
         </Modal>
 
-        {/* Confirmación de acción */}
         <Modal
           visible={showConfirmation}
           transparent={true}
@@ -1021,10 +1096,11 @@ const MovimientoP: React.FC<MovimientoProps> = ({ navigation, route }) => {
         >
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Confirmar acción</Text>
+              <Text style={styles.modalTitle}>✋ Confirmar acción</Text>
               <Text style={styles.confirmationText}>
                 ¿Está seguro que desea marcar este movimiento como{' '}
                 <Text style={styles.highlightText}>{selectedReason}</Text>?
+                {'\n\n🔓 Esto desbloqueará la navegación.'}
               </Text>
               
               <View style={styles.confirmationButtons}>
@@ -1042,7 +1118,7 @@ const MovimientoP: React.FC<MovimientoProps> = ({ navigation, route }) => {
                   disabled={processingFinalization}
                 >
                   <Text style={styles.confirmButtonText}>
-                    {processingFinalization ? 'Procesando...' : 'Confirmar'}
+                    {processingFinalization ? '⏳ Procesando...' : '✅ Confirmar'}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -1054,7 +1130,7 @@ const MovimientoP: React.FC<MovimientoProps> = ({ navigation, route }) => {
   );
 };
 
-// Estilos
+// Estilos (mantener los mismos del original)
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,

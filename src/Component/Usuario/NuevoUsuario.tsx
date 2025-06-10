@@ -217,14 +217,14 @@ const CrearNuevoUsuario: React.FC = () => {
         };
 
         // Fetch empresas
-        const empresasRes = await fetch('http://10.10.10.6:3000/empresas', { headers });
+        const empresasRes = await fetch('http://31.97.13.182:3000/empresas', { headers });
         const empresasData = await empresasRes.json();
         setEmpresas(empresasData);
         setEmpresaId(empresasData[0]?.id.toString() || '');
         updateProgress(40);
 
         // Fetch localidades
-        const localidadesRes = await fetch('http://10.10.10.6:3000/localidades', { headers });
+        const localidadesRes = await fetch('http://31.97.13.182:3000/localidades', { headers });
         const localidadesData = await localidadesRes.json();
         setLocalidades(localidadesData);
         setLocalidadId(localidadesData[0]?.id.toString() || '');
@@ -275,7 +275,7 @@ const CrearNuevoUsuario: React.FC = () => {
 
     try {
       const token = await AsyncStorage.getItem('token');
-      const response = await fetch('http://10.10.10.6:3000/usuarios', {
+      const response = await fetch('http://31.97.13.182:3000/usuarios', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
