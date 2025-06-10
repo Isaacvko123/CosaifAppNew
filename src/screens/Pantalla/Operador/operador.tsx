@@ -75,7 +75,7 @@ const Maquinista: React.FC = () => {
       const parsedUser = JSON.parse(await AsyncStorage.getItem('user') || '{}');
       const localidadId = parsedUser.localidadId;
 
-      const res = await fetch(`http://10.10.10.6:3000/rondas/localidad/${localidadId}/siguiente`, {
+      const res = await fetch(`http://31.97.13.182:3000/rondas/localidad/${localidadId}/siguiente`, {
         headers: { Authorization: `Bearer ${usr.token}` },
       });
 

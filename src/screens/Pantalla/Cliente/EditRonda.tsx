@@ -28,7 +28,7 @@ import {
 const { width } = Dimensions.get('window');
 
 /* ---------- constantes y tema ---------- */
-const BASE_URL = 'http://10.10.10.6:3000';
+const BASE_URL = 'http://31.97.13.182:3000';
 
 // Paleta de colores premium
 const COLORS = {

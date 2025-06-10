@@ -4,21 +4,26 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  ScrollView,
   Alert,
   ActivityIndicator,
+  ScrollView,
   StyleSheet,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { FontAwesome5 } from '@expo/vector-icons';
-import { styles } from './CrearViasStyles';
+import { styles } from './CrearViasStyles'; // Asegúrate de tener este archivo de estilos
 
 interface Via {
   numero: number;
   nombre: string;
 }
 
-const CrearVias: React.FC = () => {
+interface CrearViasProps {
+  localidadId: number;
+  onComplete: () => void;
+}
+
+const CrearVias: React.FC<CrearViasProps> = ({ localidadId, onComplete }) => {
   const [step, setStep] = useState(1);
   const [viaCount, setViaCount] = useState<number>(1);
   const [vias, setVias] = useState<Via[]>([]);
@@ -28,10 +33,9 @@ const CrearVias: React.FC = () => {
   // Paso 1: Definir la cantidad de vías
   const handleContinueStep1 = () => {
     if (viaCount <= 0 || isNaN(viaCount)) {
-      Alert.alert('Error', 'Ingrese un número válido');
+      Alert.alert('Error', 'Ingrese un número válido de vías.');
       return;
     }
-    // Inicializamos el arreglo de vías
     const initialVias = Array.from({ length: viaCount }, (_, i) => ({
       numero: i + 1,
       nombre: '',
@@ -51,79 +55,49 @@ const CrearVias: React.FC = () => {
     setVias(updated);
   };
 
-  // Función que envía cada vía de forma secuencial al backend
+  // Envía vías de forma secuencial
   const handleSendVias = async () => {
+    console.log('⏳ handleSendVias arrancó');
     setIsProcessing(true);
     setProgressCount(0);
     try {
-      // Obtenemos la localidad almacenada en AsyncStorage (previamente guardada)
-      const storedLocalidad = await AsyncStorage.getItem('localidad');
-      if (!storedLocalidad) {
-        Alert.alert('Error', 'No se encontró la localidad asociada.');
-        setIsProcessing(false);
-        return;
-      }
-      const localidad = JSON.parse(storedLocalidad);
-
-      // Obtenemos el token de autenticación
       const token = await AsyncStorage.getItem('token');
+      console.log('🔑 Token:', token);
 
-      // Enviamos cada vía de forma secuencial
       for (let i = 0; i < vias.length; i++) {
-        const via = vias[i];
-        const response = await fetch('http://192.168.101.20:3000/vias', {
+        console.log(`Enviando vía ${i + 1}/${vias.length}`, vias[i]);
+        const response = await fetch('http://31.97.13.182:3000/vias', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
           body: JSON.stringify({
-            numero: via.numero,
-            nombre: via.nombre,
-            localidadId: localidad.id,
+            numero: vias[i].numero,
+            nombre: vias[i].nombre,
+            localidadId,
           }),
         });
+        console.log('Respuesta status:', response.status);
         if (!response.ok) {
-          let errorMessage = 'Error al crear la vía.';
-          try {
-            const data = await response.json();
-            errorMessage = data.error || errorMessage;
-          } catch (err) {
-            const text = await response.text();
-            errorMessage = text || errorMessage;
-          }
-          Alert.alert('Error', errorMessage);
+          const text = await response.text();
+          console.error('❌ Error creando vía:', text);
+          Alert.alert('Error', text || 'Error al crear la vía.');
           setIsProcessing(false);
           return;
         }
-        // Actualizamos el progreso luego de cada envío exitoso
         setProgressCount(prev => prev + 1);
       }
+
+      console.log('✅ Todas las vías creadas');
       Alert.alert('Éxito', 'Todas las vías se han creado correctamente.');
-    } catch (error) {
-      console.error('Error al enviar vías:', error);
+      onComplete();
+    } catch (err) {
+      console.error('💥 Exception en handleSendVias:', err);
       Alert.alert('Error', 'Ocurrió un error al procesar las vías.');
     } finally {
       setIsProcessing(false);
     }
-  };
-
-  // Paso 3: Confirmación de datos
-  const handleConfirm = () => {
-    Alert.alert(
-      'Confirmación',
-      'Se crearán las siguientes vías:\n' +
-        vias
-          .map(
-            (via, i) =>
-              `Vía ${i + 1}: Número ${via.numero}, Nombre ${via.nombre || 'No definido'}`
-          )
-          .join('\n'),
-      [
-        { text: 'Cancelar' },
-        { text: 'Confirmar', onPress: () => handleSendVias() },
-      ]
-    );
   };
 
   // Splash de carga con progreso
@@ -148,10 +122,10 @@ const CrearVias: React.FC = () => {
             keyboardType="numeric"
             placeholder="Número de vías"
             value={viaCount.toString()}
-            onChangeText={(text) => setViaCount(parseInt(text, 10) || 0)}
+            onChangeText={text => setViaCount(parseInt(text, 10) || 0)}
           />
           <TouchableOpacity style={styles.button} onPress={handleContinueStep1}>
-            <FontAwesome5 name="arrow-right" size={20} color="#FFF" style={styles.buttonIcon} />
+            <FontAwesome5 name="arrow-right" size={20} color="#FFF" />
             <Text style={styles.buttonText}>Continuar</Text>
           </TouchableOpacity>
         </View>
@@ -168,23 +142,23 @@ const CrearVias: React.FC = () => {
                 keyboardType="numeric"
                 placeholder="Número de vía"
                 value={via.numero.toString()}
-                onChangeText={(text) => updateVia(index, 'numero', text)}
+                onChangeText={txt => updateVia(index, 'numero', txt)}
               />
               <TextInput
                 style={styles.input}
                 placeholder="Nombre de la vía"
                 value={via.nombre}
-                onChangeText={(text) => updateVia(index, 'nombre', text)}
+                onChangeText={txt => updateVia(index, 'nombre', txt)}
               />
             </View>
           ))}
           <View style={styles.buttonRow}>
             <TouchableOpacity style={styles.button} onPress={() => setStep(1)}>
-              <FontAwesome5 name="arrow-left" size={20} color="#FFF" style={styles.buttonIcon} />
+              <FontAwesome5 name="arrow-left" size={20} color="#FFF" />
               <Text style={styles.buttonText}>Volver</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.button} onPress={() => setStep(3)}>
-              <FontAwesome5 name="arrow-right" size={20} color="#FFF" style={styles.buttonIcon} />
+              <FontAwesome5 name="arrow-right" size={20} color="#FFF" />
               <Text style={styles.buttonText}>Revisar</Text>
             </TouchableOpacity>
           </View>
@@ -201,13 +175,22 @@ const CrearVias: React.FC = () => {
               </Text>
             </View>
           ))}
+
           <View style={styles.buttonRow}>
             <TouchableOpacity style={styles.button} onPress={() => setStep(2)}>
-              <FontAwesome5 name="arrow-left" size={20} color="#FFF" style={styles.buttonIcon} />
+              <FontAwesome5 name="arrow-left" size={20} color="#FFF" />
               <Text style={styles.buttonText}>Volver</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.button} onPress={handleConfirm}>
-              <FontAwesome5 name="check" size={20} color="#FFF" style={styles.buttonIcon} />
+
+            {/* Confirmar dispara directamente la creación */}
+            <TouchableOpacity
+              style={styles.button}
+              onPress={() => {
+                console.log('🔴 Confirm pressed, llamando handleSendVias');
+                handleSendVias();
+              }}
+            >
+              <FontAwesome5 name="check" size={20} color="#FFF" />
               <Text style={styles.buttonText}>Confirmar</Text>
             </TouchableOpacity>
           </View>

@@ -84,19 +84,19 @@ const DesignSystem = {
       large: {
         fontSize: 28,
         lineHeight: 34,
-        fontWeight: "bold",
+        fontWeight: "700",
         letterSpacing: 0.2,
       },
       medium: {
         fontSize: 22,
         lineHeight: 28,
-        fontWeight: "bold",
+        fontWeight: "700",
         letterSpacing: 0.15,
       },
       small: {
         fontSize: 18,
         lineHeight: 24,
-        fontWeight: "bold",
+        fontWeight: "700",
         letterSpacing: 0.1,
       },
     },
@@ -226,6 +226,7 @@ export const estilosBase = StyleSheet.create({
     borderTopColor: DesignSystem.colors.common.border,
     alignItems: 'center',
   },
+
   roleContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -283,11 +284,7 @@ export const estilosBase = StyleSheet.create({
     alignItems: 'center',
     marginRight: DesignSystem.spacing.medium,
   },
-  avatarText: {
-    ...DesignSystem.typography.header.medium,
-    color: DesignSystem.colors.common.white,
-  },
-  userTextContainer: {
+ userTextContainer: {
     flex: 1,
   },
   userName: {
@@ -312,8 +309,12 @@ export const estilosPorRol = {
       textShadowColor: 'rgba(15, 26, 47, 0.5)',
     },
     menuText: {
-      color: DesignSystem.colors.text.ADMINISTRADOR,
-    },
+  marginLeft: 12,
+  flex: 1,
+  fontSize: 16,
+  lineHeight: 22,
+  fontWeight: '500',
+},
     activeMenuItem: {
       backgroundColor: DesignSystem.colors.accentTranslucent.ADMINISTRADOR,
     },
@@ -447,6 +448,7 @@ export const estilosPorRol = {
     menuContainer: {
       backgroundColor: DesignSystem.colors.primary.OPERADOR,
     },
+    
     headerText: {
       color: DesignSystem.colors.text.OPERADOR,
       textShadowColor: 'rgba(79, 59, 10, 0.5)',
@@ -477,6 +479,12 @@ export const estilosPorRol = {
       opacity: 0.6,
     },
   }),
+  logoutText: {
+  marginLeft: 10,
+  fontSize: 16,
+  fontWeight: '700',
+  letterSpacing: 1,
+},
 };
 
 // Exporta el sistema de diseño completo para uso global

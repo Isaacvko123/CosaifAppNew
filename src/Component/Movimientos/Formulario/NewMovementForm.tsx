@@ -1,3 +1,4 @@
+// NewMovementForm.tsx
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   ScrollView,
@@ -9,6 +10,8 @@ import {
   Image,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useNavigation } from '@react-navigation/native';
+import type { StackNavigationProp } from '@react-navigation/stack';
 
 import { formStylesBase } from './formStyles';
 import StepOne from './StepOne';
@@ -41,6 +44,14 @@ export interface MovementFormData {
   direccionEmpuje?: 'EMPUJAR' | 'JALAR' | 'Sin_Solicitar';
 }
 
+// Declare your navigation params including Movimientos
+type RootStackParamList = {
+  Movimientos: undefined;
+  // ... otras rutas
+};
+type NavProp = StackNavigationProp<RootStackParamList, 'Movimientos'>;
+
+// --- ADD THIS INTERFACE ---
 interface NewMovementFormProps {
   onFinish: () => void;
 }
@@ -63,7 +74,7 @@ const initialFormState: MovementFormData = {
   fechaInicio: new Date().toISOString(),
   fechaFin: new Date().toISOString(),
   posicionChimenea: null,
-  direccionEmpuje: "Sin_Solicitar",
+  direccionEmpuje: 'Sin_Solicitar',
 };
 
 const STEP_CONFIG = [
@@ -72,12 +83,13 @@ const STEP_CONFIG = [
   { label: 'Paso 3 de 3', percent: 100 },
 ];
 
+// Use the NewMovementFormProps interface here
 const NewMovementForm: React.FC<NewMovementFormProps> = ({ onFinish }) => {
+  const navigation = useNavigation<NavProp>();
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState<MovementFormData>(initialFormState);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
-
   const [predefinedTracks, setPredefinedTracks] = useState<Track[]>([]);
   const [localities, setLocalities] = useState<any[]>([]);
   const [showFromOptions, setShowFromOptions] = useState(false);
@@ -88,7 +100,7 @@ const NewMovementForm: React.FC<NewMovementFormProps> = ({ onFinish }) => {
       const userStr = await AsyncStorage.getItem('user');
       if (userStr) {
         const user = JSON.parse(userStr);
-        setFormData((prev) => ({
+        setFormData(prev => ({
           ...prev,
           creadoPorId: user.id,
           clienteId: user.id,
@@ -105,19 +117,17 @@ const NewMovementForm: React.FC<NewMovementFormProps> = ({ onFinish }) => {
     try {
       const token = await AsyncStorage.getItem('token');
       if (!token) throw new Error('No token');
-
-      const [localitiesRes, viasRes] = await Promise.all([
-        fetch('http://10.10.10.6:3000/localidades', {
+      const [locRes, viasRes] = await Promise.all([
+        fetch('http://31.97.13.182:3000/localidades', {
           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         }),
-        fetch('http://10.10.10.6:3000/vias', {
+        fetch('http://31.97.13.182:3000/vias', {
           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         }),
       ]);
-
-      const localitiesData = await localitiesRes.json();
+      const localData = await locRes.json();
       const viasData = await viasRes.json();
-      setLocalities(localitiesData);
+      setLocalities(localData);
       setPredefinedTracks(
         viasData
           .map((v: any) => ({ id: v.id, nombre: v.nombre }))
@@ -149,10 +159,9 @@ const NewMovementForm: React.FC<NewMovementFormProps> = ({ onFinish }) => {
 
   const nextStep = () => {
     if (currentStep === 1 && !validateStep1()) return;
-    setCurrentStep((prev) => Math.min(prev + 1, 3));
+    setCurrentStep(prev => Math.min(prev + 1, 3));
   };
-
-  const prevStep = () => setCurrentStep((prev) => Math.max(prev - 1, 1));
+  const prevStep = () => setCurrentStep(prev => Math.max(prev - 1, 1));
 
   const { label: stepLabel, percent } = useMemo(
     () => STEP_CONFIG[currentStep - 1],
@@ -178,7 +187,13 @@ const NewMovementForm: React.FC<NewMovementFormProps> = ({ onFinish }) => {
       case 2:
         return <StepTwo formData={formData} setFormData={setFormData} />;
       case 3:
-        return <StepThree formData={formData} setFormData={setFormData} onFinish={onFinish} />;
+        return (
+          <StepThree
+            formData={formData}
+            setFormData={setFormData}
+            onFinish={onFinish}  // use the passed callback
+          />
+        );
       default:
         return null;
     }
@@ -186,10 +201,23 @@ const NewMovementForm: React.FC<NewMovementFormProps> = ({ onFinish }) => {
 
   if (loading) {
     return (
-      <View style={[formStylesBase.scrollContainer, { alignItems: 'center', justifyContent: 'center' }]}>
-        <Image source={require('../../../../assets/logo.png')} style={{ width: 220, height: 220, marginBottom: 30 }} />
+      <View
+        style={[
+          formStylesBase.scrollContainer,
+          { alignItems: 'center', justifyContent: 'center' },
+        ]}>
+        <Image
+          source={require('../../../../assets/logo.png')}
+          style={{ width: 220, height: 220, marginBottom: 30 }}
+        />
         <ActivityIndicator size="large" color="#2C3E50" />
-        <Text style={{ marginTop: 16, fontSize: 16, fontWeight: '500', color: '#2C3E50' }}>
+        <Text
+          style={{
+            marginTop: 16,
+            fontSize: 16,
+            fontWeight: '500',
+            color: '#2C3E50',
+          }}>
           Cargando datos del formulario...
         </Text>
       </View>
@@ -198,7 +226,9 @@ const NewMovementForm: React.FC<NewMovementFormProps> = ({ onFinish }) => {
 
   return (
     <ScrollView contentContainerStyle={formStylesBase.scrollContainer}>
-      <Text style={formStylesBase.title}>Nuevo Movimiento ({stepLabel})</Text>
+      <Text style={formStylesBase.title}>
+        Nuevo Movimiento ({stepLabel})
+      </Text>
       <View style={formStylesBase.progressBarContainer}>
         <View
           style={[
@@ -208,19 +238,28 @@ const NewMovementForm: React.FC<NewMovementFormProps> = ({ onFinish }) => {
         />
       </View>
       <Text
-        style={{ textAlign: 'right', marginTop: 4, marginBottom: 8, fontSize: 12, color: '#666' }}
-      >
+        style={{
+          textAlign: 'right',
+          marginTop: 4,
+          marginBottom: 8,
+          fontSize: 12,
+          color: '#666',
+        }}>
         {percent}%
       </Text>
       {renderStep()}
       <View style={formStylesBase.navigationContainer}>
         {currentStep > 1 && (
-          <TouchableOpacity style={formStylesBase.navButton} onPress={prevStep}>
+          <TouchableOpacity
+            style={formStylesBase.navButton}
+            onPress={prevStep}>
             <Text style={formStylesBase.confirmButtonText}>Anterior</Text>
           </TouchableOpacity>
         )}
         {currentStep < 3 && (
-          <TouchableOpacity style={formStylesBase.navButton} onPress={nextStep}>
+          <TouchableOpacity
+            style={formStylesBase.navButton}
+            onPress={nextStep}>
             <Text style={formStylesBase.confirmButtonText}>Siguiente</Text>
           </TouchableOpacity>
         )}

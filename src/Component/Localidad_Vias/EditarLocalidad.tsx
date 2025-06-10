@@ -30,44 +30,59 @@ const EditarLocalidad: React.FC<EditarLocalidadProps> = ({ localidadId, onFinish
   const [error, setError] = useState<string>('');
   const [editingVias, setEditingVias] = useState<boolean>(false);
 
-  const fetchLocalidadDetalle = async () => {
+  const fetchDetalles = async () => {
+    console.log('🔄 fetchDetalles para localidadId:', localidadId);
     try {
+      setLoading(true);
       const token = await AsyncStorage.getItem('token');
-      const res = await fetch(`http://10.10.10.6:3000/localidades/${localidadId}`, {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      const data = await res.json();
-      if (!data.vias) data.vias = [];
-      setLocalidad(data);
-    } catch (err) {
-      setError('Error al cargar detalles de la localidad.');
-    }
-  };
+      console.log('🔑 Token obtenido:', token);
+      if (!token) throw new Error('Token no encontrado');
 
-  const fetchVias = async () => {
-    try {
-      const token = await AsyncStorage.getItem('token');
-      const res = await fetch(`http://10.10.10.6:3000/vias/localidad/${localidadId}`, {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      const data = await res.json();
-      setLocalidad(prev => (prev ? { ...prev, vias: data } : null));
-    } catch (err) {
-      console.error('Error cargando vías:', err);
+      const [localidadRes, viasRes] = await Promise.all([
+        fetch(`http://31.97.13.182:3000/localidades/${localidadId}`, {
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+        }),
+        fetch(`http://31.97.13.182:3000/vias/localidad/${localidadId}`, {
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+        }),
+      ]);
+
+      console.log(
+        `📥 localidadRes status: ${localidadRes.status}, viasRes status: ${viasRes.status}`
+      );
+
+      if (!localidadRes.ok) {
+        const text = await localidadRes.text();
+        throw new Error(`Error al obtener localidad: ${text}`);
+      }
+      if (!viasRes.ok) {
+        const text = await viasRes.text();
+        throw new Error(`Error al obtener vías: ${text}`);
+      }
+
+      const localidadData = await localidadRes.json();
+      const viasData = await viasRes.json();
+      console.log('📑 localidadData:', localidadData);
+      console.log(`📑 viasData (count ${viasData.length}):`, viasData);
+
+      localidadData.vias = viasData;
+      setLocalidad(localidadData);
+    } catch (err: any) {
+      console.error('❌ Error al obtener detalles:', err);
+      setError(err.message || 'Error al cargar detalles de la localidad.');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchLocalidadDetalle();
-    fetchVias();
+    fetchDetalles();
   }, [localidadId]);
 
   if (loading) {
@@ -89,7 +104,9 @@ const EditarLocalidad: React.FC<EditarLocalidadProps> = ({ localidadId, onFinish
     return (
       <View style={styles.container}>
         <FontAwesome5 name="exclamation-circle" size={30} color="#FF4D4D" />
-        <Text style={{ color: '#FF4D4D', marginVertical: 10 }}>{error || 'No se encontró la localidad.'}</Text>
+        <Text style={{ color: '#FF4D4D', marginVertical: 10 }}>
+          {error || 'No se encontró la localidad.'}
+        </Text>
         <TouchableOpacity style={styles.cancelButton} onPress={onFinish}>
           <Text style={styles.buttonText}>Regresar</Text>
         </TouchableOpacity>
@@ -100,8 +117,21 @@ const EditarLocalidad: React.FC<EditarLocalidadProps> = ({ localidadId, onFinish
   if (editingVias) {
     return (
       <ScrollView contentContainerStyle={styles.container}>
-        <CrearVias />
-        <TouchableOpacity style={styles.cancelButton} onPress={() => setEditingVias(false)}>
+        <CrearVias
+          localidadId={localidad.id}
+          onComplete={() => {
+            console.log('✅ onComplete de CrearVias ejecutado');
+            setEditingVias(false);
+            fetchDetalles();
+          }}
+        />
+        <TouchableOpacity
+          style={styles.cancelButton}
+          onPress={() => {
+            console.log('↩ Volver a detalles sin crear vías');
+            setEditingVias(false);
+          }}
+        >
           <Text style={styles.buttonText}>Volver a detalles</Text>
         </TouchableOpacity>
       </ScrollView>
@@ -110,13 +140,11 @@ const EditarLocalidad: React.FC<EditarLocalidadProps> = ({ localidadId, onFinish
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      {/* Tarjeta de Localidad (solo vista) */}
       <View style={styles.card}>
         <Text style={styles.title}>{localidad.nombre}</Text>
         <Text style={styles.subtitle}>Estado: {localidad.estado}</Text>
       </View>
 
-      {/* Tarjeta de Vías */}
       <View style={styles.card}>
         <Text style={styles.title}>Vías registradas</Text>
         {localidad.vias && localidad.vias.length > 0 ? (
@@ -137,7 +165,13 @@ const EditarLocalidad: React.FC<EditarLocalidadProps> = ({ localidadId, onFinish
           <Text style={styles.cardText}>No hay vías registradas aún.</Text>
         )}
 
-        <TouchableOpacity style={styles.editButton} onPress={() => setEditingVias(true)}>
+        <TouchableOpacity
+          style={styles.editButton}
+          onPress={() => {
+            console.log('✏️ Iniciando edición de vías');
+            setEditingVias(true);
+          }}
+        >
           <FontAwesome5 name="edit" size={18} color="#FFF" style={styles.buttonIcon} />
           <Text style={styles.buttonText}>Editar Vías</Text>
         </TouchableOpacity>

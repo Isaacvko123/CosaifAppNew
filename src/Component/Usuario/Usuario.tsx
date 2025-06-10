@@ -21,7 +21,7 @@ import { styles, COLORS } from './UsuarioStyles';
 import { formStylesPorRol, rolFormMap } from './FormStyles';
 
 import type { StackNavigationProp } from '@react-navigation/stack';
-import RootStackParamList from '../../navigation/Navigation';
+import type { RootStackParamList } from '../../navigation/Navigation';
 
 type NavigationProp = StackNavigationProp<RootStackParamList, 'Usuario'>;
 
@@ -175,7 +175,7 @@ const Usuario: React.FC = () => {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       };
       
-      const response = await fetch('http://10.10.10.6:3000/usuarios', { 
+      const response = await fetch('http://31.97.13.182:3000/usuarios', { 
         headers,
         method: 'GET',
       });

@@ -119,7 +119,7 @@ const StepOne: React.FC<StepOneProps> = ({
           const token = await AsyncStorage.getItem('token');
           if (!token) throw new Error('Token no encontrado');
 
-          const res = await fetch('http://10.10.10.6:3000/empresas', {
+          const res = await fetch('http://31.97.13.182:3000/empresas', {
             headers: { 'Authorization': `Bearer ${token}` },
           });
 
@@ -144,7 +144,7 @@ const StepOne: React.FC<StepOneProps> = ({
         const token = await AsyncStorage.getItem('token');
         if (!token) throw new Error('Token no encontrado');
 
-        const res = await fetch('http://10.10.10.6:3000/localidades', {
+        const res = await fetch('http://31.97.13.182:3000/localidades', {
           headers: { 'Authorization': `Bearer ${token}` },
         });
         if (!res.ok) throw new Error('Fallo al cargar localidades');
@@ -174,7 +174,7 @@ const StepOne: React.FC<StepOneProps> = ({
         const token = await AsyncStorage.getItem('token');
         if (!token) throw new Error('Token no encontrado');
 
-        const res = await fetch(`http://10.10.10.6:3000/vias/localidad/${formData.selectedLocalityId}`, {
+        const res = await fetch(`http://31.97.13.182:3000/vias/localidad/${formData.selectedLocalityId}`, {
           headers: { 'Authorization': `Bearer ${token}` },
         });
 

@@ -2,35 +2,14 @@
  * Navigation.tsx
  * 
  * Configuración centralizada del sistema de navegación de la aplicación.
- *
- * Este archivo define la estructura de navegación principal utilizando
- * `createStackNavigator` de React Navigation.
- * 
- * Pantallas configuradas:
- * - SplashScreen (pantalla inicial con animación)
- * - Login (pantalla de autenticación)
- * - Supervisor (vista principal para usuarios con rol admin)
- * - Cliente (pantalla dedicada a clientes)
- * - Movimientos (vista de gestión de movimientos logísticos)
- * - Usuario (pantalla para gestión de usuarios)
- * 
- * Características:
- * - Navegación basada en stack.
- * - Cada pantalla se registra en el stack navigator con su componente y opciones.
- * - La navegación se inicia desde "Splash".
- * - Algunas pantallas ocultan la cabecera para personalizar la UI.
- *
- * Tipado:
- * - `RootStackParamList` define la firma de rutas esperadas para garantizar seguridad de navegación.
- * 
- * Requisitos:
- * - `@react-navigation/native`
- * - `@react-navigation/stack`
  */
 
 import React from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, NavigationContainerRef } from '@react-navigation/native';
+
+// 🔧 Referencia global para poder navegar desde cualquier parte (como App.tsx)
+export const navigationRef = React.createRef<NavigationContainerRef<any>>();
 
 // Pantallas
 import SplashScreen from '../screens/SplashScreen';
@@ -42,9 +21,10 @@ import Maquinista from '../screens/Pantalla/Maquinista/Maquinista';
 import Supervisor from '../screens/Pantalla/Supervisor/Subervisor';
 import LocalidadVias from '../Component/Localidad_Vias/LocalidadVias'; 
 import Operador from '../screens/Pantalla/Operador/operador';
-import MovimientoP from '../screens/Pantalla/Maquinista/MovimientoP'
-// Nueva pantalla para "Localidad y Vi
-// Definición del stack y tipado de rutas
+import MovimientoP from '../screens/Pantalla/Maquinista/MovimientoP';
+import Incidente from '../screens/Pantalla/Maquinista/Incidente';
+
+// 🔧 TIPOS CORREGIDOS PARA INCIDENTES
 export type RootStackParamList = {
   Splash: undefined;
   Login: undefined;
@@ -56,20 +36,19 @@ export type RootStackParamList = {
   Supervisor: undefined;
   Maquinista: undefined;
   MovimientoP: { movimientoId: string; locomotora: string };
+  // 🚨 TIPO CORREGIDO PARA COINCIDIR CON EL NOTIFICATION SERVICE
+  Incidente: { 
+    incidenteId?: string; 
+    fromNotification?: boolean; 
+    notificationData?: any 
+  } | undefined;
 };
 
-// Inicializa el stack navigator con tipado fuerte
 const Stack = createStackNavigator<RootStackParamList>();
 
-/*
- * Componente Navigation
- * 
- * Retorna el contenedor de navegación con todas las rutas registradas.
- */
 export default function Navigation() {
   return (
-    <NavigationContainer>
-      
+    <NavigationContainer ref={navigationRef}>
       <Stack.Navigator initialRouteName="Splash">
         <Stack.Screen
           name="Splash"
@@ -77,10 +56,10 @@ export default function Navigation() {
           options={{ headerShown: false }}
         />
         <Stack.Screen 
-        name= "MovimientoP"
-        component={MovimientoP}
-        options={{ headerShown: false }}
-        ></Stack.Screen>
+          name="MovimientoP"
+          component={MovimientoP}
+          options={{ headerShown: false }}
+        />
         <Stack.Screen
           name="Login"
           component={Login}
@@ -91,27 +70,29 @@ export default function Navigation() {
           component={Supervisor}
           options={{ headerShown: false }}
         />
-     <Stack.Screen
-  name="Localidad"
-  component={LocalidadVias}
-  options={{ headerShown: true }}
-/>
-
-{/*Maquinista */}
+        <Stack.Screen
+          name="Localidad"
+          component={LocalidadVias}
+          options={{ headerShown: true }}
+        />
         <Stack.Screen
           name="Maquinista"
           component={Maquinista}
-          options={{ headerShown:  false }}
+          options={{ headerShown: false }}
         />
-<Stack.Screen
+        <Stack.Screen
           name="Operador"
           component={Operador}
           options={{ headerShown: false }}
         />
-
         <Stack.Screen
           name="Cliente"
           component={Cliente}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen 
+          name="Incidente" 
+          component={Incidente}
           options={{ headerShown: false }}
         />
         <Stack.Screen
@@ -124,7 +105,6 @@ export default function Navigation() {
           component={Usuario}
           options={{ headerShown: true }}
         />
-
       </Stack.Navigator>
     </NavigationContainer>
   );
