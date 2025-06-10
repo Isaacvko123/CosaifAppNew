@@ -1031,7 +1031,7 @@ export default function Movimientos() {
           ]} 
           onPress={() => handlePageChange('prev')}
           disabled={currentPage === 1}
-          activeOpacity={0.7}
+          activeOpacity={0.8}
         >
           <Feather 
             name="chevron-left" 
